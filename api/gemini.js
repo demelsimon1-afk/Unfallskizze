@@ -236,7 +236,7 @@ module.exports = async function handler(req, res) {
     }
 
     // 100 % kostenloser Free-Tier-Modus (ohne Guthaben / ohne Abrechnungskonto):
-    // Nutzt kostenlose Flash-Modelle (inkl. gemini-3.8-flash / gemini-flash-latest) für schnelle Objekterkennung.
+    // Extrahiert Straßenpolygone und Fahrbahnmarkierungen als scharfe Vektorgeometrie.
     if (sawFreeTierLimitZero) {
       const prioritizedDiscovered = discoveredVisionModels.sort((a, b) => {
         const score = (n) => {
@@ -285,11 +285,13 @@ module.exports = async function handler(req, res) {
                     parts: [
                       {
                         text: [
-                          'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                          'Return ONLY a compact valid JSON object with two keys:',
-                          '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
-                          '2. "vegetation": array of simplified polygons (max 8 polygons, max 10 [y, x] points each in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
-                          'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
+                          'Extract the road geometry and road markings from this top-down aerial road photo using normalized coordinates from 0 to 1000 (y, x).',
+                          'Ignore all cars, trees, grass, shadows, and buildings. Return ONLY a compact valid JSON object with keys:',
+                          '1. "roads": array of simplified polygons (each an array of [y, x] points, 4..14 points per polygon) covering the paved road surfaces and intersections.',
+                          '2. "solidLines": array of polylines (each an array of [y, x] points) for solid white road edge lines, solid lane dividers, and stop lines.',
+                          '3. "dashedLines": array of polylines (each an array of [y, x] points) for dashed white center/lane lines.',
+                          '4. "crosswalks": array of [ [y1, x1], [y2, x2] ] start/end pairs ONLY where real zebra crossings are clearly visible.',
+                          '5. "arrows": array of [y, x, angleDeg] for directional road arrows (0=right, 90=down, 180=left, 270=up).'
                         ].join(' ')
                       },
                       {
@@ -321,11 +323,14 @@ module.exports = async function handler(req, res) {
               }
               const parsed = JSON.parse(jsonMatch[0]);
               return res.status(200).json({
-                fallbackMode: 'vision_cleanup',
+                fallbackMode: 'vector_road',
                 model: vModel,
                 detections: {
-                  vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                  vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+                  roads: Array.isArray(parsed?.roads) ? parsed.roads : [],
+                  solidLines: Array.isArray(parsed?.solidLines) ? parsed.solidLines : [],
+                  dashedLines: Array.isArray(parsed?.dashedLines) ? parsed.dashedLines : [],
+                  crosswalks: Array.isArray(parsed?.crosswalks) ? parsed.crosswalks : [],
+                  arrows: Array.isArray(parsed?.arrows) ? parsed.arrows : []
                 }
               });
             } else {
