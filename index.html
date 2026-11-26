@@ -257,7 +257,7 @@
                   </summary>
                   <div class="pt-2 space-y-1.5">
                     <p class="text-[10.5px] text-indigo-900/80 leading-snug">
-                      Wenn <strong>GEMINI_API_KEY</strong> auf dem Vercel-Server hinterlegt ist, läuft die KI für alle Besucher automatisch. Alternativ hier deinen eigenen kostenlosen Key eintragen:
+                      Mit einem <strong>kostenlosen Google AI Studio Key</strong> bereinigt Gemini automatisch Fahrzeuge &amp; Grünflächen. Falls im Google-Konto Abrechnung aktiv ist, wird zusätzlich die direkte Pixel-Generierung genutzt.
                     </p>
                     <div class="flex gap-1">
                       <input id="input-gemini-apikey" type="password" placeholder="AQ.Ab8... oder AIzaSy..." autocomplete="off" class="flex-1 min-w-0 px-2 py-1 rounded border border-indigo-300 bg-white font-mono text-[11px] text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -1479,119 +1479,94 @@
         if (!state.hasBackground || !state.bgProcessedCanvas || !state.bgOriginalCanvas) return;
         const pCtx = state.bgProcessedCanvas.getContext('2d');
         pCtx.clearRect(0, 0, state.bgWidth, state.bgHeight);
+        pCtx.drawImage(state.bgOriginalCanvas, 0, 0, state.bgWidth, state.bgHeight);
 
-        let drewBase = false;
-        if (state.aiActive && state.aiBlend >= 0.99 && state.bgAiCanvas) {
-          try {
-            pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
-            drewBase = true;
-          } catch (_) {
-            drewBase = false;
-          }
-        }
-
-        if (!drewBase) {
-          try {
-            pCtx.drawImage(state.bgOriginalCanvas, 0, 0, state.bgWidth, state.bgHeight);
-          } catch (_) {}
-
-          if (state.aiActive && state.bgAiCanvas) {
-            try {
-              pCtx.save();
-              pCtx.globalAlpha = Math.max(0, Math.min(1, state.aiBlend));
-              pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
-              pCtx.restore();
-            } catch (_) {}
-          }
+        if (state.aiActive && state.bgAiCanvas && state.aiBlend > 0) {
+          pCtx.save();
+          pCtx.globalAlpha = Math.max(0, Math.min(1, state.aiBlend));
+          pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
+          pCtx.restore();
         }
 
         if (state.bgRetouchCanvas) {
-          try {
-            pCtx.drawImage(state.bgRetouchCanvas, 0, 0, state.bgWidth, state.bgHeight);
-          } catch (_) {}
+          pCtx.drawImage(state.bgRetouchCanvas, 0, 0, state.bgWidth, state.bgHeight);
         }
 
         renderCanvas();
       }
 
       function updateAiUI() {
+        const hasAiCanvas = Boolean(state.bgAiCanvas);
         const badge = document.getElementById('ai-active-badge');
+        const btnClean = document.getElementById('btn-ai-clean');
+        const iconSparkle = document.getElementById('icon-ai-sparkle');
+        const iconSpinner = document.getElementById('icon-ai-spinner');
+        const btnCleanText = document.getElementById('btn-ai-clean-text');
         const resultBar = document.getElementById('ai-result-bar');
         const blendVal = document.getElementById('val-ai-blend');
         const blendRng = document.getElementById('rng-ai-blend');
-        const toggleBtn = document.getElementById('btn-ai-toggle');
-        const cleanBtn = document.getElementById('btn-ai-clean');
-        const sparkle = document.getElementById('icon-ai-sparkle');
-        const spinner = document.getElementById('icon-ai-spinner');
-        const cleanText = document.getElementById('btn-ai-clean-text');
+        const btnToggle = document.getElementById('btn-ai-toggle');
 
-        if (badge) badge.classList.toggle('hidden', !state.aiActive);
-        if (resultBar) resultBar.classList.toggle('hidden', !state.bgAiCanvas);
-
-        const pct = Math.round(state.aiBlend * 100);
-        if (blendVal) blendVal.textContent = `${pct}% Bereinigt`;
-        if (blendRng) blendRng.value = String(pct);
-        if (toggleBtn) {
-          toggleBtn.textContent = state.aiBlend > 0.5 ? 'Original zeigen' : 'KI-Bild zeigen';
-        }
-
-        if (cleanBtn) cleanBtn.disabled = !state.hasBackground || state.aiBusy;
-        if (sparkle) sparkle.classList.toggle('hidden', state.aiBusy);
-        if (spinner) spinner.classList.toggle('hidden', !state.aiBusy);
-        if (cleanText) {
-          cleanText.textContent = state.aiBusy
+        if (badge) badge.classList.toggle('hidden', !hasAiCanvas || !state.aiActive);
+        if (btnClean) btnClean.disabled = !state.hasBackground || state.aiBusy;
+        if (iconSparkle) iconSparkle.classList.toggle('hidden', state.aiBusy);
+        if (iconSpinner) iconSpinner.classList.toggle('hidden', !state.aiBusy);
+        if (btnCleanText) {
+          btnCleanText.textContent = state.aiBusy
             ? 'KI bereinigt Luftbild…'
-            : 'Fahrbahn bereinigen';
+            : (hasAiCanvas ? 'Erneut bereinigen' : 'Fahrbahn bereinigen');
+        }
+        if (resultBar) resultBar.classList.toggle('hidden', !hasAiCanvas);
+
+        const pct = Math.round(Math.max(0, Math.min(1, state.aiBlend)) * 100);
+        if (blendVal) blendVal.textContent = `${pct}% Scharf`;
+        if (blendRng && document.activeElement !== blendRng) blendRng.value = String(pct);
+        if (btnToggle) {
+          btnToggle.textContent = state.aiBlend > 0.5 ? 'Original zeigen' : 'KI-Bild zeigen';
         }
       }
 
-      function applyCrispUnsharpMask(srcCanvas, strength = 0.55) {
+      function applyCrispUnsharpMask(srcCanvas, amount = 0.35) {
         const w = srcCanvas.width;
         const h = srcCanvas.height;
         const out = document.createElement('canvas');
         out.width = w;
         out.height = h;
         const oCtx = out.getContext('2d');
-        oCtx.drawImage(srcCanvas, 0, 0);
+        oCtx.drawImage(srcCanvas, 0, 0, w, h);
 
         try {
           const imgData = oCtx.getImageData(0, 0, w, h);
-          const data = imgData.data;
-          const copy = new Uint8ClampedArray(data);
-
+          const d = imgData.data;
+          const copy = new Uint8ClampedArray(d);
+          const stride = w * 4;
           for (let y = 1; y < h - 1; y++) {
             for (let x = 1; x < w - 1; x++) {
-              const idx = (y * w + x) * 4;
+              const i = y * stride + x * 4;
               for (let c = 0; c < 3; c++) {
-                const center = copy[idx + c];
-                const neighbors =
-                  copy[idx - 4 + c] +
-                  copy[idx + 4 + c] +
-                  copy[idx - w * 4 + c] +
-                  copy[idx + w * 4 + c];
-                const blur = (center * 4 + neighbors) / 8;
-                const detail = center - blur;
-                if (Math.abs(detail) > 3) {
-                  data[idx + c] = Math.max(0, Math.min(255, Math.round(center + detail * strength * 2.2)));
-                }
+                const center = copy[i + c];
+                const avg = (
+                  copy[i - stride + c] +
+                  copy[i + stride + c] +
+                  copy[i - 4 + c] +
+                  copy[i + 4 + c]
+                ) * 0.25;
+                const val = center + (center - avg) * amount;
+                d[i + c] = val < 0 ? 0 : (val > 255 ? 255 : val);
               }
             }
           }
           oCtx.putImageData(imgData, 0, 0);
         } catch (_) {
-          // Fallback falls Canvas durch fremde Bildquelle geschützt ist
+          // Falls Canvas tainted ist, unveränderte Kopie zurückgeben
         }
         return out;
       }
 
-      function applyLocalSharpFallback(srcCanvas) {
-        return applyCrispUnsharpMask(srcCanvas, 0.65);
-      }
-
       function getClosestAspectRatio(w, h) {
         const ratio = w / Math.max(1, h);
-        const candidates = [
-          { label: '1:1', val: 1.0 },
+        const supported = [
+          { label: '1:1', val: 1 },
           { label: '4:3', val: 4 / 3 },
           { label: '3:4', val: 3 / 4 },
           { label: '16:9', val: 16 / 9 },
@@ -1599,16 +1574,119 @@
           { label: '3:2', val: 3 / 2 },
           { label: '2:3', val: 2 / 3 }
         ];
-        let best = candidates[0];
+        let best = supported[0];
         let minDiff = Math.abs(ratio - best.val);
-        for (const c of candidates) {
-          const diff = Math.abs(ratio - c.val);
+        for (const item of supported) {
+          const diff = Math.abs(ratio - item.val);
           if (diff < minDiff) {
             minDiff = diff;
-            best = c;
+            best = item;
           }
         }
         return best.label;
+      }
+
+      // Bereinigt das Luftbild mithilfe der von Gemini Vision erkannten Fahrzeug- & Grünflächen-Koordinaten (100% Free-Tier kompatibel)
+      function applyVisionCleanupToCanvas(sourceCanvas, detections) {
+        const w = state.bgWidth;
+        const h = state.bgHeight;
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const oCtx = out.getContext('2d');
+        oCtx.drawImage(sourceCanvas, 0, 0, w, h);
+
+        const vehicles = Array.isArray(detections?.vehicles) ? detections.vehicles : [];
+        const vegetation = Array.isArray(detections?.vegetation) ? detections.vegetation : [];
+
+        // 1. Fahrzeuge und Schatten auf der Fahrbahn durch umliegende Asphalt-Pixel ersetzen
+        try {
+          const imgData = oCtx.getImageData(0, 0, w, h);
+          const data = imgData.data;
+          const orig = new Uint8ClampedArray(data);
+
+          for (const box of vehicles) {
+            if (!Array.isArray(box) || box.length < 4) continue;
+            const [ymin, xmin, ymax, xmax] = box.map(Number);
+            if ([ymin, xmin, ymax, xmax].some(v => Number.isNaN(v))) continue;
+
+            const pad = 4;
+            const x1 = Math.max(0, Math.floor((Math.min(xmin, xmax) / 1000) * w) - pad);
+            const y1 = Math.max(0, Math.floor((Math.min(ymin, ymax) / 1000) * h) - pad);
+            const x2 = Math.min(w - 1, Math.ceil((Math.max(xmin, xmax) / 1000) * w) + pad);
+            const y2 = Math.min(h - 1, Math.ceil((Math.max(ymin, ymax) / 1000) * h) + pad);
+            const bw = x2 - x1;
+            const bh = y2 - y1;
+
+            if (bw < 4 || bh < 4 || (bw * bh) > (w * h * 0.45)) continue;
+
+            if (bh >= bw) {
+              // Vertikaler Straßenverlauf: Asphaltfarbe von oberhalb und unterhalb des Fahrzeugs überblenden
+              const topY = Math.max(0, y1 - 3);
+              const botY = Math.min(h - 1, y2 + 3);
+              for (let x = x1; x <= x2; x++) {
+                const topIdx = (topY * w + x) * 4;
+                const botIdx = (botY * w + x) * 4;
+                for (let y = y1; y <= y2; y++) {
+                  const t = (y - y1) / Math.max(1, bh);
+                  const idx = (y * w + x) * 4;
+                  for (let c = 0; c < 3; c++) {
+                    const interp = orig[topIdx + c] * (1 - t) + orig[botIdx + c] * t;
+                    data[idx + c] = Math.round(interp);
+                  }
+                }
+              }
+            } else {
+              // Horizontaler Straßenverlauf: Asphaltfarbe von links und rechts des Fahrzeugs überblenden
+              const leftX = Math.max(0, x1 - 3);
+              const rightX = Math.min(w - 1, x2 + 3);
+              for (let y = y1; y <= y2; y++) {
+                const leftIdx = (y * w + leftX) * 4;
+                const rightIdx = (y * w + rightX) * 4;
+                for (let x = x1; x <= x2; x++) {
+                  const t = (x - x1) / Math.max(1, bw);
+                  const idx = (y * w + x) * 4;
+                  for (let c = 0; c < 3; c++) {
+                    const interp = orig[leftIdx + c] * (1 - t) + orig[rightIdx + c] * t;
+                    data[idx + c] = Math.round(interp);
+                  }
+                }
+              }
+            }
+          }
+          oCtx.putImageData(imgData, 0, 0);
+        } catch (_) {}
+
+        // 2. Bäume, Wiesen und Grünflächen außerhalb der Fahrbahn neutralisieren
+        if (vegetation.length > 0) {
+          oCtx.save();
+          oCtx.fillStyle = '#e2e8f0';
+          oCtx.strokeStyle = '#e2e8f0';
+          oCtx.lineWidth = 3;
+          oCtx.lineJoin = 'round';
+          for (const poly of vegetation) {
+            if (!Array.isArray(poly) || poly.length < 3) continue;
+            oCtx.beginPath();
+            let validPts = 0;
+            poly.forEach((pt) => {
+              if (!Array.isArray(pt) || pt.length < 2) return;
+              const py = Math.max(0, Math.min(1000, Number(pt[0]))) / 1000 * h;
+              const px = Math.max(0, Math.min(1000, Number(pt[1]))) / 1000 * w;
+              if (Number.isNaN(px) || Number.isNaN(py)) return;
+              if (validPts === 0) oCtx.moveTo(px, py);
+              else oCtx.lineTo(px, py);
+              validPts++;
+            });
+            if (validPts >= 3) {
+              oCtx.closePath();
+              oCtx.fill();
+              oCtx.stroke();
+            }
+          }
+          oCtx.restore();
+        }
+
+        return applyCrispUnsharpMask(out, 0.35);
       }
 
       // Bereinigt das echte Luftbild pixelgenau ohne synthetische Straßen oder erfundene Linien
@@ -1645,6 +1723,9 @@
 
           if (proxyRes && proxyRes.ok) {
             const proxyData = await proxyRes.json();
+            if (proxyData?.fallbackMode === 'vision_cleanup' && proxyData?.detections) {
+              return { mode: 'vision_cleanup', detections: proxyData.detections };
+            }
             const parts = proxyData?.candidates?.[0]?.content?.parts || [];
             const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
             if (imgPart) {
@@ -1655,37 +1736,9 @@
                 outImg.onerror = reject;
                 outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
               });
-              return outImg;
+              return { mode: 'image', img: outImg };
             }
           } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
-            if (proxyRes.status === 429 || proxyRes.status === 503) {
-              await new Promise(r => setTimeout(r, 1200));
-              const retryRes = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  prompt: strictPrompt,
-                  imageBase64: base64Data,
-                  mimeType: sendMime,
-                  aspectRatio: targetAspect
-                })
-              }).catch(() => null);
-              if (retryRes && retryRes.ok) {
-                const retryData = await retryRes.json();
-                const rParts = retryData?.candidates?.[0]?.content?.parts || [];
-                const rImgPart = rParts.find(p => p.inlineData && p.inlineData.data);
-                if (rImgPart) {
-                  const mime = rImgPart.inlineData.mimeType || 'image/png';
-                  const outImg = new Image();
-                  await new Promise((resolve, reject) => {
-                    outImg.onload = resolve;
-                    outImg.onerror = reject;
-                    outImg.src = `data:${mime};base64,${rImgPart.inlineData.data}`;
-                  });
-                  return outImg;
-                }
-              }
-            }
             const errInfo = await proxyRes.json().catch(() => ({}));
             const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
             const err = new Error(detail);
@@ -1696,13 +1749,14 @@
 
         if (activeKey) {
           const imageModels = [
-            'gemini-3.1-flash-image',
-            'gemini-2.5-flash-image'
+            'gemini-2.5-flash-image',
+            'gemini-3.1-flash-image'
           ];
           let res = null;
+          let lastErrJson = {};
           for (const modelName of imageModels) {
             const ctrl = new AbortController();
-            const tId = setTimeout(() => ctrl.abort(), 12000);
+            const tId = setTimeout(() => ctrl.abort(), 14000);
             try {
               const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`;
               res = await fetch(apiUrl, {
@@ -1728,28 +1782,77 @@
               clearTimeout(tId);
             }
             if (res && res.ok) break;
-            if (res && res.status !== 404 && res.status !== 429 && res.status !== 503) break;
+            if (res) {
+              lastErrJson = await res.json().catch(() => ({}));
+              const errStr = JSON.stringify(lastErrJson);
+              if (res.status === 429 && (/limit:\s*0/i.test(errStr) || /free_tier/i.test(errStr))) {
+                break;
+              }
+            }
           }
 
-          if (!res || !res.ok) {
-            const err = new Error(`HTTP ${res ? res.status : 'Netzwerk'}`);
-            err.status = res ? res.status : 0;
-            throw err;
+          if (res && res.ok) {
+            const data = await res.json();
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+            if (imgPart) {
+              const mime = imgPart.inlineData.mimeType || 'image/png';
+              const outImg = new Image();
+              await new Promise((resolve, reject) => {
+                outImg.onload = resolve;
+                outImg.onerror = reject;
+                outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
+              });
+              return { mode: 'image', img: outImg };
+            }
           }
 
-          const data = await res.json();
-          const parts = data?.candidates?.[0]?.content?.parts || [];
-          const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
-          if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
+          // Free-Tier-Fallback für direkt im Browser hinterlegte Keys (gemini-2.5-flash)
+          const vRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(activeKey)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    {
+                      text: [
+                        'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
+                        'Return ONLY valid JSON with two keys:',
+                        '1. "vehicles": array of bounding boxes [ymin, xmin, ymax, xmax] for every vehicle and dark vehicle shadow on the road.',
+                        '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, and green areas OUTSIDE the road curbs.'
+                      ].join(' ')
+                    },
+                    { inlineData: { mimeType: sendMime, data: base64Data } }
+                  ]
+                }],
+                generationConfig: {
+                  temperature: 0.1,
+                  responseMimeType: 'application/json'
+                }
+              })
+            }
+          ).catch(() => null);
 
-          const mime = imgPart.inlineData.mimeType || 'image/png';
-          const outImg = new Image();
-          await new Promise((resolve, reject) => {
-            outImg.onload = resolve;
-            outImg.onerror = reject;
-            outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
-          });
-          return outImg;
+          if (vRes && vRes.ok) {
+            const vData = await vRes.json().catch(() => ({}));
+            const rawText = (vData?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('\n').trim();
+            const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+            const parsed = JSON.parse(cleanedJson);
+            return {
+              mode: 'vision_cleanup',
+              detections: {
+                vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+                vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+              }
+            };
+          }
+
+          const detail = lastErrJson?.error?.message || `HTTP ${res ? res.status : 'Netzwerk'}`;
+          const err = new Error(detail);
+          err.status = res ? res.status : 0;
+          throw err;
         }
 
         // Standard-Modus in der Gemini-Vorschau (ohne eigenen Key)
@@ -1789,7 +1892,7 @@
           outImg.onerror = reject;
           outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
         });
-        return outImg;
+        return { mode: 'image', img: outImg };
       }
 
       async function runAiRoadCleanup() {
@@ -1821,21 +1924,29 @@
           const base64Data = dataUrl.split(',')[1];
           const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
 
-          const outImg = await renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, '');
+          const outcome = await renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, '');
 
-          const aiCanvas = document.createElement('canvas');
-          aiCanvas.width = state.bgWidth;
-          aiCanvas.height = state.bgHeight;
-          const aCtx = aiCanvas.getContext('2d');
-          aCtx.imageSmoothingEnabled = true;
-          aCtx.imageSmoothingQuality = 'high';
-          aCtx.drawImage(outImg, 0, 0, state.bgWidth, state.bgHeight);
+          if (outcome.mode === 'vision_cleanup') {
+            state.bgAiCanvas = applyVisionCleanupToCanvas(sourceForAi, outcome.detections);
+            state.aiActive = true;
+            state.aiBlend = 1.0;
+            processBackgroundImage();
+            showToast('Luftbild mit kostenlosem Gemini-Key bereinigt (Fahrzeuge & Grünflächen entfernt).', 'success');
+          } else {
+            const aiCanvas = document.createElement('canvas');
+            aiCanvas.width = state.bgWidth;
+            aiCanvas.height = state.bgHeight;
+            const aCtx = aiCanvas.getContext('2d');
+            aCtx.imageSmoothingEnabled = true;
+            aCtx.imageSmoothingQuality = 'high';
+            aCtx.drawImage(outcome.img, 0, 0, state.bgWidth, state.bgHeight);
 
-          state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.35);
-          state.aiActive = true;
-          state.aiBlend = 1.0;
-          processBackgroundImage();
-          showToast('Luftbild bereinigt – nur vorhandene Straßen und Markierungen wurden übernommen.', 'success');
+            state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.35);
+            state.aiActive = true;
+            state.aiBlend = 1.0;
+            processBackgroundImage();
+            showToast('Luftbild bereinigt – nur vorhandene Straßen und Markierungen wurden übernommen.', 'success');
+          }
         } catch (err) {
           state.bgAiCanvas = null;
           state.aiActive = false;
@@ -1853,10 +1964,8 @@
             if (keyDetails) keyDetails.open = true;
             if (keyInput) keyInput.focus();
             showToast(`API-Key prüfen (${errMsg || 'HTTP ' + err.status}).`, 'warning');
-          } else if (err?.status === 503 || err?.status === 429) {
-            showToast('Google-KI gerade ausgelastet (503/429) – bitte kurz warten und erneut klicken.', 'warning');
           } else {
-            showToast(`KI-Fehler (${errMsg || 'Netzwerk'}) – Original-Luftbild bleibt erhalten.`, 'warning');
+            showToast(`KI-Hinweis: ${errMsg || 'Anfrage fehlgeschlagen'} – Original-Luftbild bleibt erhalten.`, 'warning');
           }
         } finally {
           state.aiBusy = false;
