@@ -302,6 +302,10 @@
                     <svg class="w-4 h-4 text-teal-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                     <span>Freihand-Linie</span>
                   </button>
+                  <button id="btn-retouch-cad-line" type="button" class="retouch-tool-btn col-span-2 py-2 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-indigo-50 text-slate-800 flex items-center justify-center gap-1.5 transition" title="Gerade oder geknickte Straßenkante / Fahrbahnlinie ohne KI sauber ziehen">
+                    <svg class="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 18L12 6l8 12"/></svg>
+                    <span>CAD-Linie / Straße nachzeichnen (Ohne KI)</span>
+                  </button>
                 </div>
 
                 <!-- Detail-Optionen für aktives Retusche- & Markierungswerkzeug -->
@@ -377,6 +381,7 @@
                       <option value="white_solid">Weiß – durchgezogene Linie</option>
                       <option value="white_dashed">Weiß – Leitlinie (gestrichelt)</option>
                       <option value="yellow_solid">Gelb – Baustellenmarkierung</option>
+                      <option value="curb_edge">Bordstein / Straßenkante (Hellgrau)</option>
                     </select>
                   </div>
 
@@ -1291,7 +1296,7 @@
         aiBusy: false,
 
         // Händische Markierungs-Korrektur & vordefinierte Markierungen
-        retouchTool: null, // 'preset_marking' | 'eraser' | 'lasso' | 'marking_draw' | 'pipette'
+        retouchTool: null, // 'preset_marking' | 'eraser' | 'lasso' | 'marking_draw' | 'cad_line' | 'pipette'
         retouchSize: 14,
         retouchAutoAsphalt: true,
         retouchColor: '#475569',
@@ -1302,6 +1307,7 @@
         presetAngleDeg: 0,
         retouchHistory: [],
         lassoPoints: [],
+        cadLineStart: null,
         lastRetouchPt: null,
         hoverImgPt: null,
 
@@ -1894,8 +1900,14 @@
           }
 
           if (customKey) {
-            // 100 % KOSTENLOSES FREE-TIER-MODELL mit schnellem Ausweich-Fallback bei 503/429
-            const fallbackModels = ['gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+            // Bevorzugt aktuelle Gemini-Modelle (inkl. Pro/Flash-Preview) mit automatischem Ausweich-Fallback
+            const fallbackModels = [
+              'gemini-3-flash-preview',
+              'gemini-3.8-flash',
+              'gemini-3.5-flash-lite',
+              'gemini-3.1-flash-lite',
+              'gemini-3.6-flash'
+            ];
             let res = null;
             for (const modelName of fallbackModels) {
               const ctrl = new AbortController();
@@ -2121,6 +2133,7 @@
         }
         state.retouchTool = toolName;
         state.lassoPoints = [];
+        state.cadLineStart = null;
         state.lastRetouchPt = null;
 
         const badge = document.getElementById('retouch-active-badge');
@@ -2142,7 +2155,8 @@
           preset_marking: 'btn-retouch-preset',
           eraser: 'btn-retouch-eraser',
           lasso: 'btn-retouch-lasso',
-          marking_draw: 'btn-retouch-marking'
+          marking_draw: 'btn-retouch-marking',
+          cad_line: 'btn-retouch-cad-line'
         };
         if (toolName && btnMap[toolName]) {
           const activeBtn = document.getElementById(btnMap[toolName]);
@@ -2154,9 +2168,9 @@
         if (presetOpts) presetOpts.classList.toggle('hidden', toolName !== 'preset_marking');
         if (sizeRow) sizeRow.classList.toggle('hidden', toolName === 'preset_marking' || toolName === 'lasso');
         if (asphaltOpts) asphaltOpts.classList.toggle('hidden', toolName !== 'eraser' && toolName !== 'lasso');
-        if (markingOpts) markingOpts.classList.toggle('hidden', toolName !== 'marking_draw');
+        if (markingOpts) markingOpts.classList.toggle('hidden', toolName !== 'marking_draw' && toolName !== 'cad_line');
         if (sizeLbl) {
-          sizeLbl.textContent = toolName === 'marking_draw' ? 'Linienbreite' : 'Pinselbreite';
+          sizeLbl.textContent = (toolName === 'marking_draw' || toolName === 'cad_line') ? 'Linienbreite' : 'Pinselbreite';
         }
 
         if (toolName === 'preset_marking') {
@@ -2259,7 +2273,7 @@
           rCtx.stroke();
         } else if (state.retouchTool === 'marking_draw') {
           const style = state.retouchMarkingStyle;
-          rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : '#ffffff';
+          rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
           rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
           rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.6, state.retouchSize * 1.4] : []);
           rCtx.beginPath();
@@ -2267,6 +2281,27 @@
           rCtx.lineTo(p2.x, p2.y);
           rCtx.stroke();
         }
+        rCtx.restore();
+        processBackgroundImage();
+      }
+
+      function drawCadStraightLineToRetouch(p1, p2) {
+        if (!state.bgRetouchCanvas || !p1 || !p2) return;
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (dist < 3) return;
+        pushRetouchHistory();
+        const rCtx = state.bgRetouchCanvas.getContext('2d');
+        const style = state.retouchMarkingStyle;
+        rCtx.save();
+        rCtx.lineCap = 'butt';
+        rCtx.lineJoin = 'round';
+        rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
+        rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
+        rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.8, state.retouchSize * 1.5] : []);
+        rCtx.beginPath();
+        rCtx.moveTo(p1.x, p1.y);
+        rCtx.lineTo(p2.x, p2.y);
+        rCtx.stroke();
         rCtx.restore();
         processBackgroundImage();
       }
@@ -2988,6 +3023,10 @@
             textEl.textContent = 'Freiauswahl aktiv: Bereich umranden und loslassen zum Bereinigen.';
           } else if (state.retouchTool === 'marking_draw') {
             textEl.textContent = 'Freihand-Linie aktiv: Markierung direkt auf die Fahrbahn zeichnen.';
+          } else if (state.retouchTool === 'cad_line') {
+            textEl.textContent = state.cadLineStart
+              ? 'CAD-Linie (Ohne KI): Zweiten Punkt klicken oder ziehen, um die gerade Linie abzusetzen.'
+              : 'CAD-Linie (Ohne KI): Startpunkt einer Straßenkante oder Linie anklicken/ziehen.';
           } else if (state.retouchTool === 'pipette') {
             textEl.textContent = 'Pipette aktiv: Klicken Sie auf eine freie Asphaltstelle.';
           }
@@ -3513,6 +3552,33 @@
             c.closePath();
             c.fill();
             c.stroke();
+            c.restore();
+          } else if (state.retouchTool === 'cad_line' && state.hoverImgPt) {
+            const startPt = state.cadLineStart || (dragState && dragState.type === 'cad_line_drag' ? dragState.startImg : null);
+            const style = state.retouchMarkingStyle;
+            const col = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
+            const lw = Math.max(2, state.retouchSize * 0.45);
+            c.save();
+            if (startPt) {
+              c.strokeStyle = col;
+              c.lineWidth = lw;
+              c.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.8, state.retouchSize * 1.5] : []);
+              c.beginPath();
+              c.moveTo(startPt.x, startPt.y);
+              c.lineTo(state.hoverImgPt.x, state.hoverImgPt.y);
+              c.stroke();
+              c.setLineDash([]);
+              c.fillStyle = '#38bdf8';
+              c.beginPath();
+              c.arc(startPt.x, startPt.y, 4.5, 0, Math.PI * 2);
+              c.fill();
+            } else {
+              c.strokeStyle = '#38bdf8';
+              c.lineWidth = 1.6;
+              c.beginPath();
+              c.arc(state.hoverImgPt.x, state.hoverImgPt.y, 5, 0, Math.PI * 2);
+              c.stroke();
+            }
             c.restore();
           } else if (state.retouchTool === 'preset_marking' && state.hoverImgPt) {
             const p = getSelectedPresetMarking();
@@ -4548,6 +4614,21 @@
             dragState = { type: 'retouch_stroke' };
             return;
           }
+          if (state.retouchTool === 'cad_line') {
+            if (!state.cadLineStart) {
+              state.cadLineStart = imgPt;
+              dragState = { type: 'cad_line_drag', startImg: imgPt };
+              updateToolBanner();
+              renderCanvas();
+            } else {
+              drawCadStraightLineToRetouch(state.cadLineStart, imgPt);
+              state.cadLineStart = imgPt;
+              updateToolBanner();
+              renderCanvas();
+              showToast('CAD-Linie gesetzt – nächster Punkt fortgesetzt.', 'success');
+            }
+            return;
+          }
         }
 
         if (state.activeTool === 'freehand') {
@@ -4601,7 +4682,7 @@
         }
 
         if (!dragState) {
-          if (state.activeTool === 'baseline' || (state.activeTool === 'retouch' && state.retouchTool === 'preset_marking')) {
+          if (state.activeTool === 'baseline' || (state.activeTool === 'retouch' && (state.retouchTool === 'preset_marking' || state.retouchTool === 'cad_line'))) {
             renderCanvas();
           }
           return;
@@ -4622,7 +4703,7 @@
         } else if (dragState.type === 'retouch_lasso') {
           state.lassoPoints.push(imgPt);
           renderCanvas();
-        } else if (dragState.type === 'preset_drag') {
+        } else if (dragState.type === 'preset_drag' || dragState.type === 'cad_line_drag') {
           renderCanvas();
         } else if (dragState.type === 'freehand') {
           const mPt = worldToMeasure(imgPt.x, imgPt.y);
@@ -4653,6 +4734,14 @@
             drawPredefinedMarking(rCtx, p.id, state.presetColor, state.presetSize, finished.startImg, state.hoverImgPt, state.presetAngleDeg);
             processBackgroundImage();
             showToast(`${p.name} eingefügt.`, 'success');
+          }
+          renderCanvas();
+        } else if (finished.type === 'cad_line_drag' && finished.startImg && state.hoverImgPt) {
+          if (Math.hypot(state.hoverImgPt.x - finished.startImg.x, state.hoverImgPt.y - finished.startImg.y) >= 8) {
+            drawCadStraightLineToRetouch(finished.startImg, state.hoverImgPt);
+            state.cadLineStart = null;
+            updateToolBanner();
+            showToast('CAD-Linie eingefügt.', 'success');
           }
           renderCanvas();
         } else if (finished.type === 'freehand') {
@@ -4925,6 +5014,7 @@
         document.getElementById('btn-retouch-eraser')?.addEventListener('click', () => setRetouchTool('eraser'));
         document.getElementById('btn-retouch-lasso')?.addEventListener('click', () => setRetouchTool('lasso'));
         document.getElementById('btn-retouch-marking')?.addEventListener('click', () => setRetouchTool('marking_draw'));
+        document.getElementById('btn-retouch-cad-line')?.addEventListener('click', () => setRetouchTool('cad_line'));
 
         const updatePresetColorButtons = () => {
           const isWhite = (state.presetColor || '#ffffff').toLowerCase() === '#ffffff';
