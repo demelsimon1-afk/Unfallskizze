@@ -236,7 +236,8 @@ module.exports = async function handler(req, res) {
     }
 
     // 100 % kostenloser Free-Tier-Modus (ohne Guthaben / ohne Abrechnungskonto):
-    // Extrahiert Straßenpolygone und Fahrbahnmarkierungen als scharfe Vektorgeometrie.
+    // Erkennt präzise Bounding-Boxen von Fahrzeugen und Nicht-Straßen-Objekten (Kräne, Züge, Gebäude),
+    // damit das Frontend diese auf dem echten Luftbild sauber bereinigt, ohne Straßenformen zu verzerren.
     if (sawFreeTierLimitZero) {
       const prioritizedDiscovered = discoveredVisionModels.sort((a, b) => {
         const score = (n) => {
@@ -262,9 +263,9 @@ module.exports = async function handler(req, res) {
 
       for (const vModel of visionModels) {
         const genConfigs = [
-          { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
-          { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
-          { temperature: 0.1, maxOutputTokens: 4096 }
+          { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+          { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
+          { temperature: 0.1, maxOutputTokens: 2048 }
         ];
 
         for (const genCfg of genConfigs) {
@@ -285,13 +286,10 @@ module.exports = async function handler(req, res) {
                     parts: [
                       {
                         text: [
-                          'Extract the road geometry and road markings from this top-down aerial road photo using normalized coordinates from 0 to 1000 (y, x).',
-                          'Ignore all cars, trees, grass, shadows, and buildings. Return ONLY a compact valid JSON object with keys:',
-                          '1. "roads": array of simplified polygons (each an array of [y, x] points, 4..14 points per polygon) covering the paved road surfaces and intersections.',
-                          '2. "solidLines": array of polylines (each an array of [y, x] points) for solid white road edge lines, solid lane dividers, and stop lines.',
-                          '3. "dashedLines": array of polylines (each an array of [y, x] points) for dashed white center/lane lines.',
-                          '4. "crosswalks": array of [ [y1, x1], [y2, x2] ] start/end pairs ONLY where real zebra crossings are clearly visible.',
-                          '5. "arrows": array of [y, x, angleDeg] for directional road arrows (0=right, 90=down, 180=left, 270=up).'
+                          'Detect bounding boxes in this top-down aerial image using normalized coordinates [ymin, xmin, ymax, xmax] from 0 to 1000.',
+                          'Return ONLY a compact JSON object with two arrays:',
+                          '1. "vehicles": tight boxes [ymin, xmin, ymax, xmax] around every car, van, truck, bus, or motorcycle on the roads.',
+                          '2. "nonRoad": boxes [ymin, xmin, ymax, xmax] covering large non-road industrial yards, cranes, freight trains, or buildings outside the drivable road.'
                         ].join(' ')
                       },
                       {
@@ -323,14 +321,11 @@ module.exports = async function handler(req, res) {
               }
               const parsed = JSON.parse(jsonMatch[0]);
               return res.status(200).json({
-                fallbackMode: 'vector_road',
+                fallbackMode: 'bbox_cleanup',
                 model: vModel,
                 detections: {
-                  roads: Array.isArray(parsed?.roads) ? parsed.roads : [],
-                  solidLines: Array.isArray(parsed?.solidLines) ? parsed.solidLines : [],
-                  dashedLines: Array.isArray(parsed?.dashedLines) ? parsed.dashedLines : [],
-                  crosswalks: Array.isArray(parsed?.crosswalks) ? parsed.crosswalks : [],
-                  arrows: Array.isArray(parsed?.arrows) ? parsed.arrows : []
+                  vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+                  nonRoad: Array.isArray(parsed?.nonRoad) ? parsed.nonRoad : []
                 }
               });
             } else {
