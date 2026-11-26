@@ -216,23 +216,23 @@
             <summary class="flex items-center justify-between gap-2 text-xs font-bold text-indigo-950 cursor-pointer select-none">
               <span class="flex items-center gap-1.5">
                 <svg class="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-                KI-Bereinigung (Kostenlos / Pro)
+                Fahrbahn-Extraktion (Ohne KI / Gemini)
               </span>
               <span id="ai-active-badge" class="hidden px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">Aktiv</span>
             </summary>
             <div class="pt-2 space-y-2">
               <p class="text-[11px] text-indigo-900/85 leading-snug">
-                <strong>Fahrbahn bereinigen:</strong> Entfernt Fahrzeuge, Schatten und Außen-Vegetation aus dem Luftbild – ohne neue Straßen oder Markierungen zu erfinden.
+                <strong>Fahrbahn bereinigen:</strong> Wandelt das Luftbild in eine <strong>klare graue Straße mit scharfen weißen Markierungen</strong> um und blendet Fahrzeuge, Bäume und Gebäude aus.
               </p>
 
-              <!-- Modell- & Qualitätsstufe (Standard: 100 % Kostenlos im Google AI Studio Free Tier) -->
+              <!-- Modus-Auswahl (Standard: Sofort & scharf direkt im Browser ohne AI Studio) -->
               <div class="space-y-1">
-                <label for="select-ai-model-tier" class="block text-[10.5px] font-semibold text-indigo-950">KI-Modus:</label>
+                <label for="select-ai-model-tier" class="block text-[10.5px] font-semibold text-indigo-950">Bereinigungs-Modus:</label>
                 <select id="select-ai-model-tier" class="w-full bg-white border border-indigo-300 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="free" selected>Gemini 3.8 Flash (100 % Kostenlos · Free Tier)</option>
+                  <option value="local" selected>Schematische Straße (Ohne KI · Sofort &amp; Scharf)</option>
+                  <option value="free">Gemini 3.8 Flash (Kostenlos · Vektor-Straße)</option>
                   <option value="pro">Gemini 3 Pro Image (Bezahl-Account · 2K)</option>
                   <option value="flash3">Gemini 3.1 Flash Image (Bezahl-Account · 2K)</option>
-                  <option value="flash25">Gemini 2.5 Flash Image (Bezahl-Account)</option>
                 </select>
               </div>
 
@@ -264,12 +264,12 @@
                 <!-- Optionaler API-Key für externes Hosting (z.B. Vercel) -->
                 <details id="ai-apikey-details" class="pt-1.5 border-t border-indigo-200/70 text-[11px]">
                   <summary class="cursor-pointer select-none text-indigo-800/90 font-semibold flex items-center justify-between">
-                    <span>API-Key (Google AI Studio / Vercel)</span>
+                    <span>API-Key (Nur für Gemini-Modus)</span>
                     <span id="ai-apikey-status" class="text-[10px] font-mono text-indigo-600">Vercel-Env</span>
                   </summary>
                   <div class="pt-2 space-y-1.5">
                     <p class="text-[10.5px] text-indigo-900/80 leading-snug">
-                      Wenn dein <strong>GEMINI_API_KEY</strong> in Vercel hinterlegt ist, bleibt dieses Feld leer. Optional kannst du hier direkt einen eigenen Google-AI-Studio-Key testen.
+                      Für <strong>„Schematische Straße (Ohne KI)“</strong> wird kein Schlüssel benötigt. Für Gemini nutzt die Seite automatisch deinen Vercel-Key oder optional diesen Eintrag:
                     </p>
                     <div class="flex gap-1">
                       <input id="input-gemini-apikey" type="password" placeholder="AIzaSy... (optional)" autocomplete="off" class="flex-1 min-w-0 px-2 py-1 rounded border border-indigo-300 bg-white font-mono text-[11px] text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -1306,7 +1306,7 @@
         aiActive: false,
         aiBlend: 1.0, // 0.0 = Original, 1.0 = KI-bereinigt
         aiBusy: false,
-        aiModelTier: 'free', // 'free' | 'pro' | 'flash3' | 'flash25'
+        aiModelTier: 'local', // 'local' | 'free' | 'pro' | 'flash3' | 'flash25'
         aiUsedModel: '',
 
         // Händische Markierungs-Korrektur & vordefinierte Markierungen
@@ -1523,10 +1523,12 @@
 
         if (badge) {
           badge.classList.toggle('hidden', !hasAiCanvas || !state.aiActive);
-          if (state.aiUsedModel) {
+          if (state.aiUsedModel === 'local_schematic') {
+            badge.textContent = 'Ohne KI ✓';
+          } else if (state.aiUsedModel) {
             badge.textContent = /pro/i.test(state.aiUsedModel)
               ? 'Pro 2K ✓'
-              : (/3\.1/i.test(state.aiUsedModel) ? '3.1 HD ✓' : 'Kostenlos ✓');
+              : (/3\.1/i.test(state.aiUsedModel) ? '3.1 HD ✓' : '3.8 Flash ✓');
           } else {
             badge.textContent = 'Aktiv';
           }
@@ -1536,7 +1538,7 @@
         if (iconSpinner) iconSpinner.classList.toggle('hidden', !state.aiBusy);
         if (btnCleanText) {
           btnCleanText.textContent = state.aiBusy
-            ? 'KI bereinigt Luftbild…'
+            ? 'Bereinige Fahrbahn…'
             : (hasAiCanvas ? 'Erneut bereinigen' : 'Fahrbahn bereinigen');
         }
         if (resultBar) resultBar.classList.toggle('hidden', !hasAiCanvas);
@@ -1609,132 +1611,458 @@
         return best.label;
       }
 
-      // Bereinigt das Luftbild mithilfe der von Gemini Vision erkannten Fahrzeug- & Grünflächen-Koordinaten (100% Free-Tier kompatibel)
-      function applyVisionCleanupToCanvas(sourceCanvas, detections) {
+      // 100 % lokale Extraktion (ohne KI / ohne API-Key):
+      // Erzeugt eine gestochen scharfe graue Straße mit weißen Fahrbahnmarkierungen und blendet Bäume, Häuser & Fahrzeuge aus.
+      function extractSchematicRoadLocal(sourceCanvas) {
         const w = state.bgWidth;
         const h = state.bgHeight;
         const out = document.createElement('canvas');
         out.width = w;
         out.height = h;
         const oCtx = out.getContext('2d');
-        oCtx.drawImage(sourceCanvas, 0, 0, w, h);
+        oCtx.fillStyle = '#f1f5f9';
+        oCtx.fillRect(0, 0, w, h);
 
-        const vehicles = Array.isArray(detections?.vehicles) ? detections.vehicles : [];
-        const vegetation = Array.isArray(detections?.vegetation) ? detections.vegetation : [];
-
-        // 1. Fahrzeuge und Schatten auf der Fahrbahn durch saubere Asphalt-Pixel der Umgebung ersetzen
-        // (filtert helle weiße Fahrbahnmarkierungen & dunkle Schatten heraus, damit Linien nicht verschmieren)
         try {
-          const imgData = oCtx.getImageData(0, 0, w, h);
-          const data = imgData.data;
-          const orig = new Uint8ClampedArray(data);
+          // Schritt 1: Auf kompakter Analyse-Auflösung Fahrbahn-Maske ermitteln & Fahrzeuge überbrücken
+          const maxAna = 260;
+          const anaScale = Math.min(1, maxAna / Math.max(w, h));
+          const aw = Math.max(40, Math.round(w * anaScale));
+          const ah = Math.max(40, Math.round(h * anaScale));
 
-          const sampleAsphaltLine = (px, py, dxStep, dyStep, maxSteps) => {
-            const samples = [];
-            for (let s = 1; s <= maxSteps; s++) {
-              const sx = Math.max(0, Math.min(w - 1, px + dxStep * s));
-              const sy = Math.max(0, Math.min(h - 1, py + dyStep * s));
-              const idx = (sy * w + sx) * 4;
-              const r = orig[idx];
-              const g = orig[idx + 1];
-              const b = orig[idx + 2];
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-              // Weiße Markierungen (>195) und tiefe Schatten (<45) beim Asphalt-Sampling überspringen
-              if (lum >= 45 && lum <= 195) {
-                samples.push([r, g, b]);
+          const anaCanvas = document.createElement('canvas');
+          anaCanvas.width = aw;
+          anaCanvas.height = ah;
+          const aCtx = anaCanvas.getContext('2d');
+          aCtx.drawImage(sourceCanvas, 0, 0, aw, ah);
+          const aData = aCtx.getImageData(0, 0, aw, ah).data;
+
+          const rawMask = new Uint8Array(aw * ah);
+          for (let i = 0; i < aw * ah; i++) {
+            const idx = i * 4;
+            const r = aData[idx];
+            const g = aData[idx + 1];
+            const b = aData[idx + 2];
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const maxC = Math.max(r, g, b);
+            const minC = Math.min(r, g, b);
+            const sat = maxC - minC;
+
+            const isGreen = (g - r > 7 && g - b > 3) || (g > r * 1.07 && g > b * 1.03 && lum < 180);
+            const isWarmRoof = (r - b > 24 && sat > 26);
+            const isNeutralRoad = !isGreen && !isWarmRoof && sat <= 32 && lum >= 48 && lum <= 212;
+            // Farbige Radweg-Markierungen (z.B. türkis/grünblau) auf der Fahrbahn einschließen
+            const isColoredBikeLane = (g > r + 14 && b > r + 6 && sat >= 24 && sat <= 115 && lum >= 70 && lum <= 185);
+
+            if (isNeutralRoad || isColoredBikeLane) {
+              rawMask[i] = 1;
+            }
+          }
+
+          // Morphologisches Schließen (Dilatation -> Erosion), um Fahrzeuge und Schatten auf der Fahrbahn lückenlos zu schließen
+          const dilate = (src, rad) => {
+            const tmp = new Uint8Array(aw * ah);
+            const dst = new Uint8Array(aw * ah);
+            for (let y = 0; y < ah; y++) {
+              const row = y * aw;
+              for (let x = 0; x < aw; x++) {
+                let hit = 0;
+                const x0 = Math.max(0, x - rad);
+                const x1 = Math.min(aw - 1, x + rad);
+                for (let xx = x0; xx <= x1; xx++) {
+                  if (src[row + xx]) { hit = 1; break; }
+                }
+                tmp[row + x] = hit;
               }
             }
-            if (samples.length === 0) {
-              const sx = Math.max(0, Math.min(w - 1, px + dxStep));
-              const sy = Math.max(0, Math.min(h - 1, py + dyStep));
-              const idx = (sy * w + sx) * 4;
-              return [orig[idx], orig[idx + 1], orig[idx + 2]];
+            for (let x = 0; x < aw; x++) {
+              for (let y = 0; y < ah; y++) {
+                let hit = 0;
+                const y0 = Math.max(0, y - rad);
+                const y1 = Math.min(ah - 1, y + rad);
+                for (let yy = y0; yy <= y1; yy++) {
+                  if (tmp[yy * aw + x]) { hit = 1; break; }
+                }
+                dst[y * aw + x] = hit;
+              }
             }
-            samples.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2]));
-            return samples[Math.floor(samples.length / 2)];
+            return dst;
           };
 
-          for (const box of vehicles) {
-            if (!Array.isArray(box) || box.length < 4) continue;
-            const [ymin, xmin, ymax, xmax] = box.map(Number);
-            if ([ymin, xmin, ymax, xmax].some(v => Number.isNaN(v))) continue;
-
-            const pad = 3;
-            const x1 = Math.max(0, Math.floor((Math.min(xmin, xmax) / 1000) * w) - pad);
-            const y1 = Math.max(0, Math.floor((Math.min(ymin, ymax) / 1000) * h) - pad);
-            const x2 = Math.min(w - 1, Math.ceil((Math.max(xmin, xmax) / 1000) * w) + pad);
-            const y2 = Math.min(h - 1, Math.ceil((Math.max(ymin, ymax) / 1000) * h) + pad);
-            const bw = x2 - x1;
-            const bh = y2 - y1;
-
-            if (bw < 4 || bh < 4 || (bw * bh) > (w * h * 0.45)) continue;
-
-            if (bh >= bw) {
-              for (let x = x1; x <= x2; x++) {
-                const topCol = sampleAsphaltLine(x, y1, 0, -1, 10);
-                const botCol = sampleAsphaltLine(x, y2, 0, 1, 10);
-                for (let y = y1; y <= y2; y++) {
-                  const t = (y - y1) / Math.max(1, bh);
-                  const idx = (y * w + x) * 4;
-                  // Sanfter Randübergang (Feathering) an den äußeren 2 Pixeln
-                  const edgeDist = Math.min(x - x1, x2 - x, y - y1, y2 - y);
-                  const alpha = edgeDist < 2 ? 0.55 + edgeDist * 0.22 : 1.0;
-                  for (let c = 0; c < 3; c++) {
-                    const interp = topCol[c] * (1 - t) + botCol[c] * t;
-                    data[idx + c] = Math.round(orig[idx + c] * (1 - alpha) + interp * alpha);
-                  }
+          const erode = (src, rad) => {
+            const tmp = new Uint8Array(aw * ah);
+            const dst = new Uint8Array(aw * ah);
+            for (let y = 0; y < ah; y++) {
+              const row = y * aw;
+              for (let x = 0; x < aw; x++) {
+                let all = 1;
+                const x0 = Math.max(0, x - rad);
+                const x1 = Math.min(aw - 1, x + rad);
+                for (let xx = x0; xx <= x1; xx++) {
+                  if (!src[row + xx]) { all = 0; break; }
                 }
+                tmp[row + x] = all;
               }
-            } else {
-              for (let y = y1; y <= y2; y++) {
-                const leftCol = sampleAsphaltLine(x1, y, -1, 0, 10);
-                const rightCol = sampleAsphaltLine(x2, y, 1, 0, 10);
-                for (let x = x1; x <= x2; x++) {
-                  const t = (x - x1) / Math.max(1, bw);
-                  const idx = (y * w + x) * 4;
-                  const edgeDist = Math.min(x - x1, x2 - x, y - y1, y2 - y);
-                  const alpha = edgeDist < 2 ? 0.55 + edgeDist * 0.22 : 1.0;
-                  for (let c = 0; c < 3; c++) {
-                    const interp = leftCol[c] * (1 - t) + rightCol[c] * t;
-                    data[idx + c] = Math.round(orig[idx + c] * (1 - alpha) + interp * alpha);
-                  }
+            }
+            for (let x = 0; x < aw; x++) {
+              for (let y = 0; y < ah; y++) {
+                let all = 1;
+                const y0 = Math.max(0, y - rad);
+                const y1 = Math.min(ah - 1, y + rad);
+                for (let yy = y0; yy <= y1; yy++) {
+                  if (!tmp[yy * aw + x]) { all = 0; break; }
+                }
+                dst[y * aw + x] = all;
+              }
+            }
+            return dst;
+          };
+
+          const closeRad = Math.max(4, Math.round(6.5 * (aw / 260)));
+          const closedMask = erode(dilate(rawMask, closeRad), closeRad);
+
+          // Nur zusammenhängende Haupt-Fahrbahnflächen behalten (kleine isolierte Dächer/Höfe ausblenden)
+          const visited = new Uint8Array(aw * ah);
+          const cleanAnaMask = new Uint8Array(aw * ah);
+          const queue = new Int32Array(aw * ah);
+          const minRoadPixels = Math.max(45, Math.round(aw * ah * 0.015));
+
+          for (let i = 0; i < aw * ah; i++) {
+            if (!closedMask[i] || visited[i]) continue;
+            let head = 0;
+            let tail = 0;
+            queue[tail++] = i;
+            visited[i] = 1;
+            let touchesEdge = false;
+
+            while (head < tail) {
+              const cur = queue[head++];
+              const cx = cur % aw;
+              const cy = (cur - cx) / aw;
+              if (cx <= 1 || cx >= aw - 2 || cy <= 1 || cy >= ah - 2) touchesEdge = true;
+
+              const neighbors = [
+                cx > 0 ? cur - 1 : -1,
+                cx < aw - 1 ? cur + 1 : -1,
+                cy > 0 ? cur - aw : -1,
+                cy < ah - 1 ? cur + aw : -1
+              ];
+              for (let n = 0; n < 4; n++) {
+                const nb = neighbors[n];
+                if (nb >= 0 && closedMask[nb] && !visited[nb]) {
+                  visited[nb] = 1;
+                  queue[tail++] = nb;
                 }
               }
             }
-          }
-          oCtx.putImageData(imgData, 0, 0);
-        } catch (_) {}
 
-        // 2. Bäume, Wiesen und Grünflächen außerhalb der Fahrbahn neutralisieren
-        if (vegetation.length > 0) {
-          oCtx.save();
-          oCtx.fillStyle = '#e2e8f0';
-          oCtx.strokeStyle = '#e2e8f0';
-          oCtx.lineWidth = 3;
-          oCtx.lineJoin = 'round';
-          for (const poly of vegetation) {
-            if (!Array.isArray(poly) || poly.length < 3) continue;
-            oCtx.beginPath();
-            let validPts = 0;
-            poly.forEach((pt) => {
-              if (!Array.isArray(pt) || pt.length < 2) return;
-              const py = Math.max(0, Math.min(1000, Number(pt[0]))) / 1000 * h;
-              const px = Math.max(0, Math.min(1000, Number(pt[1]))) / 1000 * w;
-              if (Number.isNaN(px) || Number.isNaN(py)) return;
-              if (validPts === 0) oCtx.moveTo(px, py);
-              else oCtx.lineTo(px, py);
-              validPts++;
-            });
-            if (validPts >= 3) {
-              oCtx.closePath();
-              oCtx.fill();
-              oCtx.stroke();
+            if (tail >= minRoadPixels && (touchesEdge || tail >= aw * ah * 0.04)) {
+              for (let k = 0; k < tail; k++) {
+                cleanAnaMask[queue[k]] = 255;
+              }
             }
           }
-          oCtx.restore();
+
+          // Maske auf volle Auflösung hochskalieren und glätten, damit die Straßenkanten gestochen scharf sind
+          const maskSmall = document.createElement('canvas');
+          maskSmall.width = aw;
+          maskSmall.height = ah;
+          const msCtx = maskSmall.getContext('2d');
+          const msImg = msCtx.createImageData(aw, ah);
+          for (let i = 0; i < aw * ah; i++) {
+            const v = cleanAnaMask[i];
+            const idx = i * 4;
+            msImg.data[idx] = v;
+            msImg.data[idx + 1] = v;
+            msImg.data[idx + 2] = v;
+            msImg.data[idx + 3] = 255;
+          }
+          msCtx.putImageData(msImg, 0, 0);
+
+          const maskFull = document.createElement('canvas');
+          maskFull.width = w;
+          maskFull.height = h;
+          const mfCtx = maskFull.getContext('2d');
+          mfCtx.imageSmoothingEnabled = true;
+          mfCtx.imageSmoothingQuality = 'high';
+          mfCtx.filter = 'blur(2.5px)';
+          mfCtx.drawImage(maskSmall, 0, 0, w, h);
+          const mfData = mfCtx.getImageData(0, 0, w, h).data;
+
+          // Schritt 2: Auf voller Auflösung alle dünnen Fahrbahnmarkierungen per Integralbild-Kontrastfilter extrahieren
+          const srcCanvasFull = document.createElement('canvas');
+          srcCanvasFull.width = w;
+          srcCanvasFull.height = h;
+          srcCanvasFull.getContext('2d').drawImage(sourceCanvas, 0, 0, w, h);
+          const sData = srcCanvasFull.getContext('2d').getImageData(0, 0, w, h).data;
+
+          const lumArr = new Float32Array(w * h);
+          const satArr = new Uint8Array(w * h);
+          const yellowArr = new Uint8Array(w * h);
+          const integral = new Float64Array((w + 1) * (h + 1));
+
+          for (let y = 0; y < h; y++) {
+            let rowSum = 0;
+            const rowOff = y * w;
+            const intPrev = y * (w + 1);
+            const intCur = (y + 1) * (w + 1);
+            for (let x = 0; x < w; x++) {
+              const i = rowOff + x;
+              const idx = i * 4;
+              const r = sData[idx];
+              const g = sData[idx + 1];
+              const b = sData[idx + 2];
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              const sat = Math.max(r, g, b) - Math.min(r, g, b);
+              lumArr[i] = lum;
+              satArr[i] = sat;
+              if (r > 165 && g > 145 && b < 125 && (r - b) > 45) {
+                yellowArr[i] = 1;
+              }
+              // Asphalt-Helligkeit für lokalen Hintergrund-Vergleich begrenzen
+              const clampedLum = Math.max(55, Math.min(165, lum));
+              rowSum += clampedLum;
+              integral[intCur + x + 1] = integral[intPrev + x + 1] + rowSum;
+            }
+          }
+
+          const rad = 10;
+          const rawMark = new Uint8Array(w * h); // 1 = weiß, 2 = gelb
+          for (let y = 0; y < h; y++) {
+            const y0 = Math.max(0, y - rad);
+            const y1 = Math.min(h - 1, y + rad);
+            const rowOff = y * w;
+            for (let x = 0; x < w; x++) {
+              const i = rowOff + x;
+              if (mfData[i * 4] < 132) continue;
+
+              const x0 = Math.max(0, x - rad);
+              const x1 = Math.min(w - 1, x + rad);
+              const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+              const sum =
+                integral[(y1 + 1) * (w + 1) + (x1 + 1)] -
+                integral[y0 * (w + 1) + (x1 + 1)] -
+                integral[(y1 + 1) * (w + 1) + x0] +
+                integral[y0 * (w + 1) + x0];
+              const localAvg = sum / area;
+
+              if (yellowArr[i] && lumArr[i] - localAvg >= 18) {
+                rawMark[i] = 2;
+              } else if (satArr[i] <= 38 && lumArr[i] >= 156 && (lumArr[i] - localAvg) >= 21) {
+                rawMark[i] = 1;
+              }
+            }
+          }
+
+          // Schritt 3: Saubere graue Straße (#7b8492), scharfe Bordsteinkante (#334155) und weiße Markierungen (#ffffff) rendern
+          const outImg = oCtx.createImageData(w, h);
+          const od = outImg.data;
+          const stride = w * 4;
+
+          for (let y = 0; y < h; y++) {
+            const rowOff = y * w;
+            for (let x = 0; x < w; x++) {
+              const i = rowOff + x;
+              const idx = i * 4;
+              const isRoad = mfData[idx] >= 128;
+
+              if (!isRoad) {
+                // Umgebung (Bäume, Wiesen, Gebäude) neutral hellgrau ausblenden
+                od[idx] = 241;
+                od[idx + 1] = 245;
+                od[idx + 2] = 249;
+                od[idx + 3] = 255;
+                continue;
+              }
+
+              // Prüfen ob Randpixel der Straße (Bordstein-Kontur)
+              const isEdge =
+                x <= 1 || x >= w - 2 || y <= 1 || y >= h - 2 ||
+                mfData[idx - 4] < 128 || mfData[idx + 4] < 128 ||
+                mfData[idx - stride] < 128 || mfData[idx + stride] < 128 ||
+                mfData[idx - 8] < 128 || mfData[idx + 8] < 128 ||
+                mfData[idx - stride * 2] < 128 || mfData[idx + stride * 2] < 128;
+
+              if (isEdge) {
+                od[idx] = 51;
+                od[idx + 1] = 65;
+                od[idx + 2] = 85;
+                od[idx + 3] = 255;
+                continue;
+              }
+
+              // Isolierte Einzelpixel-Störungen in Markierungen unterdrücken
+              let markType = rawMark[i];
+              if (markType > 0) {
+                let nbCount = 0;
+                if (x > 0 && rawMark[i - 1]) nbCount++;
+                if (x < w - 1 && rawMark[i + 1]) nbCount++;
+                if (y > 0 && rawMark[i - w]) nbCount++;
+                if (y < h - 1 && rawMark[i + w]) nbCount++;
+                if (nbCount < 2) markType = 0;
+              }
+
+              if (markType === 1) {
+                // Gestochen scharfe weiße Fahrbahnmarkierung
+                od[idx] = 255;
+                od[idx + 1] = 255;
+                od[idx + 2] = 255;
+                od[idx + 3] = 255;
+              } else if (markType === 2) {
+                // Gelbe Markierung
+                od[idx] = 250;
+                od[idx + 1] = 204;
+                od[idx + 2] = 21;
+                od[idx + 3] = 255;
+              } else {
+                // Einheitliche, saubere graue Fahrbahnfläche
+                od[idx] = 123;
+                od[idx + 1] = 132;
+                od[idx + 2] = 146;
+                od[idx + 3] = 255;
+              }
+            }
+          }
+
+          oCtx.putImageData(outImg, 0, 0);
+        } catch (_) {
+          // Fallback auf neutrale graue Zeichenfläche
         }
 
-        return applyCrispUnsharpMask(out, 0.32);
+        return applyCrispUnsharpMask(out, 0.25);
+      }
+
+      // Zeichnet eine gestochen scharfe graue Vektor-Straße mit weißen Markierungen aus Gemini 3.8 Flash Geometriedaten
+      function renderVectorRoadFromGemini(sourceCanvas, detections) {
+        const w = state.bgWidth;
+        const h = state.bgHeight;
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const c = out.getContext('2d');
+
+        // 1. Sauberer neutraler Hintergrund (alles außer Straße ausgeblendet)
+        c.fillStyle = '#f1f5f9';
+        c.fillRect(0, 0, w, h);
+
+        const roads = Array.isArray(detections?.roads) ? detections.roads : [];
+        const solidLines = Array.isArray(detections?.solidLines) ? detections.solidLines : [];
+        const dashedLines = Array.isArray(detections?.dashedLines) ? detections.dashedLines : [];
+        const crosswalks = Array.isArray(detections?.crosswalks) ? detections.crosswalks : [];
+        const arrows = Array.isArray(detections?.arrows) ? detections.arrows : [];
+
+        const toPx = (pt) => ({
+          x: (Math.max(0, Math.min(1000, Number(pt[1]))) / 1000) * w,
+          y: (Math.max(0, Math.min(1000, Number(pt[0]))) / 1000) * h
+        });
+
+        // 2. Graue Straßenflächen mit scharfer Bordsteinkante zeichnen
+        if (roads.length > 0) {
+          c.save();
+          c.fillStyle = '#7b8492';
+          c.strokeStyle = '#334155';
+          c.lineWidth = Math.max(2.5, Math.round(w * 0.0028));
+          c.lineJoin = 'round';
+          c.lineCap = 'round';
+
+          for (const poly of roads) {
+            if (!Array.isArray(poly) || poly.length < 3) continue;
+            c.beginPath();
+            let count = 0;
+            for (const rawPt of poly) {
+              if (!Array.isArray(rawPt) || rawPt.length < 2) continue;
+              const p = toPx(rawPt);
+              if (Number.isNaN(p.x) || Number.isNaN(p.y)) continue;
+              if (count === 0) c.moveTo(p.x, p.y);
+              else c.lineTo(p.x, p.y);
+              count++;
+            }
+            if (count >= 3) {
+              c.closePath();
+              c.fill();
+              c.stroke();
+            }
+          }
+          c.restore();
+        } else {
+          // Falls Gemini keine Straßenpolygone zurückgab, lokale schematische Straße als Basis nutzen
+          const localBase = extractSchematicRoadLocal(sourceCanvas);
+          c.drawImage(localBase, 0, 0, w, h);
+        }
+
+        const lineW = Math.max(2.5, Math.round(w * 0.0032));
+
+        // 3. Durchgezogene weiße Fahrbahnmarkierungen & Haltelinien
+        c.save();
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = lineW;
+        c.lineCap = 'round';
+        c.lineJoin = 'round';
+        c.setLineDash([]);
+        for (const line of solidLines) {
+          if (!Array.isArray(line) || line.length < 2) continue;
+          c.beginPath();
+          let count = 0;
+          for (const rawPt of line) {
+            if (!Array.isArray(rawPt) || rawPt.length < 2) continue;
+            const p = toPx(rawPt);
+            if (Number.isNaN(p.x) || Number.isNaN(p.y)) continue;
+            if (count === 0) c.moveTo(p.x, p.y);
+            else c.lineTo(p.x, p.y);
+            count++;
+          }
+          if (count >= 2) c.stroke();
+        }
+        c.restore();
+
+        // 4. Gestrichelte Leitlinien
+        c.save();
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = lineW;
+        c.lineCap = 'butt';
+        c.lineJoin = 'round';
+        c.setLineDash([lineW * 3.4, lineW * 3.0]);
+        for (const line of dashedLines) {
+          if (!Array.isArray(line) || line.length < 2) continue;
+          c.beginPath();
+          let count = 0;
+          for (const rawPt of line) {
+            if (!Array.isArray(rawPt) || rawPt.length < 2) continue;
+            const p = toPx(rawPt);
+            if (Number.isNaN(p.x) || Number.isNaN(p.y)) continue;
+            if (count === 0) c.moveTo(p.x, p.y);
+            else c.lineTo(p.x, p.y);
+            count++;
+          }
+          if (count >= 2) c.stroke();
+        }
+        c.restore();
+
+        // 5. Zebrastreifen (nur wenn vorhanden)
+        for (const cw of crosswalks) {
+          if (!Array.isArray(cw) || cw.length < 2) continue;
+          const pStart = toPx(cw[0]);
+          const pEnd = toPx(cw[1]);
+          drawPredefinedMarking(c, 'crosswalk', '#ffffff', Math.max(24, Math.round(w * 0.032)), pStart, pEnd, 0);
+        }
+
+        // 6. Richtungspfeile
+        for (const ar of arrows) {
+          if (!Array.isArray(ar) || ar.length < 3) continue;
+          const p = toPx(ar);
+          const deg = Number(ar[2]) || 0;
+          drawPredefinedMarking(c, 'arrow_straight', '#ffffff', Math.max(26, Math.round(w * 0.03)), p, null, deg);
+        }
+
+        return out;
+      }
+
+      // Bereinigt das Luftbild mithilfe der von Gemini Vision erkannten Fahrzeug- & Grünflächen-Koordinaten (100% Free-Tier kompatibel)
+      function applyVisionCleanupToCanvas(sourceCanvas, detections) {
+        if (detections && (Array.isArray(detections.roads) || Array.isArray(detections.solidLines) || Array.isArray(detections.dashedLines))) {
+          return renderVectorRoadFromGemini(sourceCanvas, detections);
+        }
+        return extractSchematicRoadLocal(sourceCanvas);
       }
 
       // Bereinigt das echte Luftbild pixelgenau ohne synthetische Straßen oder erfundene Linien
@@ -1775,8 +2103,8 @@
 
           if (proxyRes && proxyRes.ok) {
             const proxyData = await proxyRes.json();
-            if (proxyData?.fallbackMode === 'vision_cleanup' && proxyData?.detections) {
-              return { mode: 'vision_cleanup', detections: proxyData.detections, model: proxyData.model || 'gemini-2.5-flash' };
+            if ((proxyData?.fallbackMode === 'vector_road' || proxyData?.fallbackMode === 'vision_cleanup') && proxyData?.detections) {
+              return { mode: 'vision_cleanup', detections: proxyData.detections, model: proxyData.model || 'gemini-3.8-flash' };
             }
             const parts = proxyData?.candidates?.[0]?.content?.parts || [];
             const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
@@ -1919,11 +2247,13 @@
                         parts: [
                           {
                             text: [
-                              'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                              'Return ONLY a compact valid JSON object with two keys:',
-                              '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
-                              '2. "vegetation": array of simplified polygons (max 8 polygons, max 10 [y, x] points each in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
-                              'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
+                              'Extract the road geometry and road markings from this top-down aerial road photo using normalized coordinates from 0 to 1000 (y, x).',
+                              'Ignore all cars, trees, grass, shadows, and buildings. Return ONLY a compact valid JSON object with keys:',
+                              '1. "roads": array of simplified polygons (each an array of [y, x] points, 4..14 points per polygon) covering the paved road surfaces and intersections.',
+                              '2. "solidLines": array of polylines (each an array of [y, x] points) for solid white road edge lines, solid lane dividers, and stop lines.',
+                              '3. "dashedLines": array of polylines (each an array of [y, x] points) for dashed white center/lane lines.',
+                              '4. "crosswalks": array of [ [y1, x1], [y2, x2] ] start/end pairs ONLY where real zebra crossings are clearly visible.',
+                              '5. "arrows": array of [y, x, angleDeg] for directional road arrows (0=right, 90=down, 180=left, 270=up).'
                             ].join(' ')
                           },
                           { inlineData: { mimeType: sendMime, data: base64Data } }
@@ -1940,409 +2270,218 @@
                     if (jsonMatch) {
                       const parsed = JSON.parse(jsonMatch[0]);
                       return {
-                      mode: 'vision_cleanup',
-                      model: vModel,
-                      detections: {
-                        vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                        vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
-                      }
-                    };
+                        mode: 'vision_cleanup',
+                        model: vModel,
+                        detections: {
+                          roads: Array.isArray(parsed?.roads) ? parsed.roads : [],
+                          solidLines: Array.isArray(parsed?.solidLines) ? parsed.solidLines : [],
+                          dashedLines: Array.isArray(parsed?.dashedLines) ? parsed.dashedLines : [],
+                          crosswalks: Array.isArray(parsed?.crosswalks) ? parsed.crosswalks : [],
+                          arrows: Array.isArray(parsed?.arrows) ? parsed.arrows : []
+                        }
+                      };
+                    }
+                    break;
+                  } else if (vRes.status !== 400) {
+                    break;
                   }
-                  break;
-                } else if (vRes.status !== 400) {
+                } catch (_) {
                   break;
                 }
-              } catch (_) {
-                break;
               }
             }
           }
+
+          const errMsg = lastErrJson?.error?.message || 'KI-Bereinigung konnte mit diesem Schlüssel nicht ausgeführt werden.';
+          throw new Error(errMsg);
         }
 
-        const errMsg = lastErrJson?.error?.message || 'KI-Bereinigung konnte mit diesem Schlüssel nicht ausgeführt werden.';
-        throw new Error(errMsg);
+        throw new Error('Kein API-Schlüssel konfiguriert und Server-Proxy nicht erreichbar.');
       }
 
-      throw new Error('Kein API-Schlüssel konfiguriert und Server-Proxy nicht erreichbar.');
-    }
+      async function runAiRoadCleanup() {
+        if (!state.hasBackground || state.aiBusy) return;
 
-    async function runAiRoadCleanup() {
-      if (!state.hasBackground || state.aiBusy) return;
-
-      state.aiBusy = true;
-      updateAiUI();
-      const overlay = document.getElementById('ai-loading-overlay');
-      if (overlay) overlay.classList.remove('hidden');
-
-      try {
-        const readableSource = state.bgTainted
-          ? await ensureCorsMapTwinCanvas()
-          : state.bgOriginalCanvas;
-
-        if (!readableSource) {
-          throw new Error('Kein lesbares Ausgangsbild vorhanden.');
-        }
-
-        const maxDim = state.aiModelTier === 'free' ? 1024 : 1280;
-        const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
-        const sendW = Math.max(64, Math.round(state.bgWidth * scale));
-        const sendH = Math.max(64, Math.round(state.bgHeight * scale));
-
-        const sendCanvas = document.createElement('canvas');
-        sendCanvas.width = sendW;
-        sendCanvas.height = sendH;
-        const sCtx = sendCanvas.getContext('2d');
-        sCtx.imageSmoothingEnabled = true;
-        sCtx.imageSmoothingQuality = 'high';
-        sCtx.drawImage(readableSource, 0, 0, sendW, sendH);
-
-        const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.88);
-        const base64Data = dataUrl.split(',')[1];
-        const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
-
-        const result = await renderCleanPhotoFromModel(base64Data, 'image/jpeg', targetAspect);
-
-        if (result.mode === 'vision_cleanup') {
-          state.bgAiCanvas = applyVisionCleanupToCanvas(readableSource, result.detections);
-          state.aiUsedModel = result.model || 'gemini-3.8-flash';
-        } else if (result.mode === 'image' && result.img) {
-          const rawAi = document.createElement('canvas');
-          rawAi.width = state.bgWidth;
-          rawAi.height = state.bgHeight;
-          const rCtx = rawAi.getContext('2d');
-          rCtx.imageSmoothingEnabled = true;
-          rCtx.imageSmoothingQuality = 'high';
-          rCtx.drawImage(result.img, 0, 0, state.bgWidth, state.bgHeight);
-          state.bgAiCanvas = applyCrispUnsharpMask(rawAi, 0.25);
-          state.aiUsedModel = result.model || 'gemini-3-pro-image';
-        } else {
-          throw new Error('Unerwartete Antwort vom KI-Dienst.');
-        }
-
-        state.aiActive = true;
-        state.aiBlend = 1.0;
-        processBackgroundImage();
-        showToast('Fahrbahn erfolgreich bereinigt.', 'success');
-      } catch (err) {
-        showToast(`KI-Hinweis: ${err?.message || 'Bereinigung fehlgeschlagen'} – Original-Luftbild bleibt erhalten.`, 'warning');
-      } finally {
-        state.aiBusy = false;
-        if (overlay) overlay.classList.add('hidden');
+        state.aiBusy = true;
         updateAiUI();
-      }
-    }
+        const overlay = document.getElementById('ai-loading-overlay');
+        if (overlay) overlay.classList.remove('hidden');
 
-    /* ============================================================================
-       5. KOORDINATEN-TRANSFORMATION (RECHTWINKLIGES MESSVERFAHREN & KURVENACHSE)
-       ============================================================================ */
-    function rebuildBaselineCurve() {
-      const m = state.measure;
-      if (!m.isCurved || !Array.isArray(m.curvePoints) || m.curvePoints.length < 2) {
-        m.curveSamples = [];
-        return;
-      }
+        try {
+          const readableSource = state.bgTainted
+            ? await ensureCorsMapTwinCanvas()
+            : state.bgOriginalCanvas;
 
-      const pts = m.curvePoints;
-      m.originX = pts[0].x;
-      m.originY = pts[0].y;
-      m.angleRad = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
-
-      const dense = [];
-      if (pts.length === 2) {
-        dense.push({ x: pts[0].x, y: pts[0].y });
-        dense.push({ x: pts[1].x, y: pts[1].y });
-      } else {
-        const stepsPerSeg = 18;
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p0 = pts[Math.max(0, i - 1)];
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const p3 = pts[Math.min(pts.length - 1, i + 2)];
-
-          for (let step = 0; step < stepsPerSeg; step++) {
-            const t = step / stepsPerSeg;
-            const t2 = t * t;
-            const t3 = t2 * t;
-            const x = 0.5 * (
-              (2 * p1.x) +
-              (-p0.x + p2.x) * t +
-              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
-            );
-            const y = 0.5 * (
-              (2 * p1.y) +
-              (-p0.y + p2.y) * t +
-              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
-            );
-            dense.push({ x, y });
+          if (!readableSource) {
+            throw new Error('Kein lesbares Ausgangsbild vorhanden.');
           }
-        }
-        dense.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
-      }
 
-      let acc = 0;
-      m.curveSamples = dense.map((p, idx) => {
-        if (idx > 0) {
-          acc += Math.hypot(p.x - dense[idx - 1].x, p.y - dense[idx - 1].y);
-        }
-        return { x: p.x, y: p.y, s: acc };
-      });
-    }
-
-    function worldToMeasure(wx, wy) {
-      const m = state.measure;
-      const ppm = Math.max(1, m.pxPerMeter);
-
-      if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
-        const samples = m.curveSamples;
-        let bestDistSq = Infinity;
-        let bestAlongPx = 0;
-        let bestPerpPx = 0;
-
-        for (let i = 0; i < samples.length - 1; i++) {
-          const a = samples[i];
-          const b = samples[i + 1];
-          const segDx = b.x - a.x;
-          const segDy = b.y - a.y;
-          const segLen = Math.hypot(segDx, segDy);
-          if (segLen < 1e-6) continue;
-
-          const tx = segDx / segLen;
-          const ty = segDy / segLen;
-          const nx = -ty * m.yDir;
-          const ny = tx * m.yDir;
-
-          const vx = wx - a.x;
-          const vy = wy - a.y;
-          let proj = vx * tx + vy * ty;
-          if (i > 0) proj = Math.max(0, proj);
-          if (i < samples.length - 2) proj = Math.min(segLen, proj);
-
-          const cx = a.x + tx * proj;
-          const cy = a.y + ty * proj;
-          const distSq = (wx - cx) * (wx - cx) + (wy - cy) * (wy - cy);
-
-          if (distSq < bestDistSq) {
-            bestDistSq = distSq;
-            bestAlongPx = a.s + proj;
-            bestPerpPx = (wx - cx) * nx + (wy - cy) * ny;
+          // Direkter lokaler Modus ohne Google AI Studio / ohne API-Key
+          if (state.aiModelTier === 'local') {
+            await new Promise(resolve => setTimeout(resolve, 40));
+            state.bgAiCanvas = extractSchematicRoadLocal(readableSource);
+            state.aiUsedModel = 'local_schematic';
+            state.aiActive = true;
+            state.aiBlend = 1.0;
+            processBackgroundImage();
+            showToast('Schematische graue Straße mit Fahrbahnmarkierungen erstellt.', 'success');
+            return;
           }
-        }
 
-        return {
-          x: bestAlongPx / ppm,
-          y: bestPerpPx / ppm
-        };
-      }
+          const maxDim = state.aiModelTier === 'free' ? 1024 : 1280;
+          const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
+          const sendW = Math.max(64, Math.round(state.bgWidth * scale));
+          const sendH = Math.max(64, Math.round(state.bgHeight * scale));
 
-      const dx = wx - m.originX;
-      const dy = wy - m.originY;
-      const cos = Math.cos(m.angleRad);
-      const sin = Math.sin(m.angleRad);
-      const nx = -sin * m.yDir;
-      const ny = cos * m.yDir;
-      const alongPx = dx * cos + dy * sin;
-      const perpPx = dx * nx + dy * ny;
+          const sendCanvas = document.createElement('canvas');
+          sendCanvas.width = sendW;
+          sendCanvas.height = sendH;
+          const sCtx = sendCanvas.getContext('2d');
+          sCtx.imageSmoothingEnabled = true;
+          sCtx.imageSmoothingQuality = 'high';
+          sCtx.drawImage(readableSource, 0, 0, sendW, sendH);
 
-      return {
-        x: alongPx / ppm,
-        y: perpPx / ppm
-      };
-    }
+          const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.88);
+          const base64Data = dataUrl.split(',')[1];
+          const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
 
-    function measureToWorld(mx, my) {
-      const m = state.measure;
-      const ppm = Math.max(1, m.pxPerMeter);
-      const alongPx = mx * ppm;
-      const perpPx = my * ppm;
+          const result = await renderCleanPhotoFromModel(base64Data, 'image/jpeg', targetAspect);
 
-      if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
-        const samples = m.curveSamples;
-        const totalS = samples[samples.length - 1].s;
-        let bx, by, tx, ty;
-
-        if (alongPx <= 0) {
-          const p0 = samples[0];
-          const p1 = samples[1];
-          const segLen = Math.max(1e-5, Math.hypot(p1.x - p0.x, p1.y - p0.y));
-          tx = (p1.x - p0.x) / segLen;
-          ty = (p1.y - p0.y) / segLen;
-          bx = p0.x + tx * alongPx;
-          by = p0.y + ty * alongPx;
-        } else if (alongPx >= totalS) {
-          const pPrev = samples[samples.length - 2];
-          const pLast = samples[samples.length - 1];
-          const segLen = Math.max(1e-5, Math.hypot(pLast.x - pPrev.x, pLast.y - pPrev.y));
-          tx = (pLast.x - pPrev.x) / segLen;
-          ty = (pLast.y - pPrev.y) / segLen;
-          const extra = alongPx - totalS;
-          bx = pLast.x + tx * extra;
-          by = pLast.y + ty * extra;
-        } else {
-          let idx = 0;
-          while (idx < samples.length - 2 && samples[idx + 1].s < alongPx) {
-            idx++;
+          if (result.mode === 'vision_cleanup') {
+            state.bgAiCanvas = applyVisionCleanupToCanvas(readableSource, result.detections);
+            state.aiUsedModel = result.model || 'gemini-3.8-flash';
+          } else if (result.mode === 'image' && result.img) {
+            const rawAi = document.createElement('canvas');
+            rawAi.width = state.bgWidth;
+            rawAi.height = state.bgHeight;
+            const rCtx = rawAi.getContext('2d');
+            rCtx.imageSmoothingEnabled = true;
+            rCtx.imageSmoothingQuality = 'high';
+            rCtx.drawImage(result.img, 0, 0, state.bgWidth, state.bgHeight);
+            state.bgAiCanvas = applyCrispUnsharpMask(rawAi, 0.25);
+            state.aiUsedModel = result.model || 'gemini-3-pro-image';
+          } else {
+            throw new Error('Unerwartete Antwort vom KI-Dienst.');
           }
-          const a = samples[idx];
-          const b = samples[idx + 1];
-          const segS = Math.max(1e-5, b.s - a.s);
-          const t = (alongPx - a.s) / segS;
-          bx = a.x + (b.x - a.x) * t;
-          by = a.y + (b.y - a.y) * t;
-          const segLen = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
-          tx = (b.x - a.x) / segLen;
-          ty = (b.y - a.y) / segLen;
+
+          state.aiActive = true;
+          state.aiBlend = 1.0;
+          processBackgroundImage();
+          showToast('Graue Fahrbahn mit Markierungen erfolgreich erstellt.', 'success');
+        } catch (err) {
+          showToast(`KI-Hinweis: ${err?.message || 'Bereinigung fehlgeschlagen'} – Original-Luftbild bleibt erhalten.`, 'warning');
+        } finally {
+          state.aiBusy = false;
+          if (overlay) overlay.classList.add('hidden');
+          updateAiUI();
         }
-
-        const nx = -ty * m.yDir;
-        const ny = tx * m.yDir;
-        return {
-          x: bx + nx * perpPx,
-          y: by + ny * perpPx
-        };
       }
 
-      const cos = Math.cos(m.angleRad);
-      const sin = Math.sin(m.angleRad);
-      const nx = -sin * m.yDir;
-      const ny = cos * m.yDir;
-      return {
-        x: m.originX + cos * alongPx + nx * perpPx,
-        y: m.originY + sin * alongPx + ny * perpPx
-      };
-    }
-
-    function measureAngleToWorldRad(angleDeg) {
-        const relRad = (angleDeg * Math.PI) / 180;
-        return state.measure.angleRad + relRad * state.measure.yDir;
+      function getSelectedPresetMarking() {
+        return PREDEFINED_MARKINGS.find(p => p.id === state.presetMarkingId) || PREDEFINED_MARKINGS[0];
       }
 
-      function worldRadToMeasureDeg(worldRad) {
-        let deg = (((worldRad - state.measure.angleRad) * state.measure.yDir) * 180) / Math.PI;
-        deg = ((deg + 180) % 360 + 360) % 360 - 180;
-        return Math.round(deg * 10) / 10;
-      }
+      function renderPresetMarkingGrid() {
+        const grid = document.getElementById('preset-marking-grid');
+        if (!grid) return;
+        grid.innerHTML = PREDEFINED_MARKINGS.map(p => {
+          const active = p.id === state.presetMarkingId;
+          return `
+            <button type="button" data-preset="${p.id}" class="preset-mark-btn px-2 py-1.5 rounded-lg border text-left flex items-center gap-1.5 transition text-[10.5px] ${
+              active
+                ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-2xs'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+            }">
+              <span class="text-slate-700">${p.svg}</span>
+              <span class="truncate">${p.name}</span>
+            </button>
+          `;
+        }).join('');
 
-      function screenToImage(sx, sy) {
-      return {
-        x: (sx - state.view.panX) / state.view.zoom,
-        y: (sy - state.view.panY) / state.view.zoom
-      };
-    }
-
-    /* ============================================================================
-       5B. VORDEFINIERTE MARKIERUNGEN & HÄNDISCHE RETUSCHE-WERKZEUGE
-       ============================================================================ */
-    function getSelectedPresetMarking() {
-      return PREDEFINED_MARKINGS.find(p => p.id === state.presetMarkingId) || PREDEFINED_MARKINGS[0];
-    }
-
-    function syncPresetMarkingUI() {
-      const p = getSelectedPresetMarking();
-      const sizeLbl = document.getElementById('preset-size-label');
-      const sizeRng = document.getElementById('rng-preset-size');
-      const sizeVal = document.getElementById('val-preset-size');
-      const angleRow = document.getElementById('preset-angle-row');
-      const hintEl = document.getElementById('preset-usage-hint');
-
-      state.presetSize = p.defaultSize;
-      if (sizeLbl) sizeLbl.textContent = p.sizeLabel || 'Größe';
-      if (sizeRng) sizeRng.value = String(p.defaultSize);
-      if (sizeVal) sizeVal.textContent = `${p.defaultSize} px`;
-      if (angleRow) angleRow.classList.toggle('hidden', p.mode !== 'stamp');
-      if (hintEl) hintEl.textContent = p.hint || '';
-    }
-
-    function renderPresetMarkingGrid() {
-      const grid = document.getElementById('preset-marking-grid');
-      if (!grid) return;
-      grid.innerHTML = PREDEFINED_MARKINGS.map(p => {
-        const active = p.id === state.presetMarkingId;
-        return `
-          <button type="button" data-preset="${p.id}" class="preset-marking-btn px-2 py-1.5 rounded-lg border text-left flex items-center gap-1.5 transition text-[10.5px] ${
-            active
-              ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-2xs'
-              : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-          }">
-            <span class="text-slate-700 shrink-0">${p.svg}</span>
-            <span class="truncate">${p.name}</span>
-          </button>
-        `;
-      }).join('');
-
-      grid.querySelectorAll('.preset-marking-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          state.presetMarkingId = btn.dataset.preset;
-          syncPresetMarkingUI();
-          renderPresetMarkingGrid();
-          updateToolBanner();
-          renderCanvas();
+        grid.querySelectorAll('.preset-mark-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.presetMarkingId = btn.dataset.preset;
+            const p = getSelectedPresetMarking();
+            state.presetSize = p.defaultSize;
+            const rng = document.getElementById('rng-preset-size');
+            const val = document.getElementById('val-preset-size');
+            const lbl = document.getElementById('preset-size-label');
+            const angRow = document.getElementById('preset-angle-row');
+            const hint = document.getElementById('preset-usage-hint');
+            if (rng) rng.value = String(p.defaultSize);
+            if (val) val.textContent = `${p.defaultSize} px`;
+            if (lbl) lbl.textContent = p.sizeLabel || 'Größe';
+            if (angRow) angRow.classList.toggle('hidden', p.mode !== 'stamp');
+            if (hint) hint.textContent = p.hint;
+            renderPresetMarkingGrid();
+            updateToolBanner();
+            renderCanvas();
+          });
         });
-      });
-
-      syncPresetMarkingUI();
-    }
-
-    function setRetouchTool(toolName) {
-      if (!state.hasBackground && toolName) {
-        showToast('Bitte übernehmen Sie zuerst ein Luftbild.', 'warning');
-        return;
       }
 
-      const nextTool = (toolName && state.retouchTool === toolName) ? null : toolName;
-      state.retouchTool = nextTool;
-      state.cadLineStart = null;
-      state.lassoPoints = [];
-      state.activeTool = nextTool ? 'retouch' : 'select';
+      function setRetouchTool(tool) {
+        const nextTool = (tool && state.retouchTool === tool) ? null : tool;
+        state.retouchTool = nextTool;
+        state.lassoPoints = [];
+        state.cadLineStart = null;
+        state.activeTool = nextTool ? 'retouch' : 'select';
 
-      const btnMap = {
-        preset_marking: 'btn-retouch-preset',
-        eraser: 'btn-retouch-eraser',
-        lasso: 'btn-retouch-lasso',
-        marking_draw: 'btn-retouch-marking',
-        cad_line: 'btn-retouch-cad-line'
-      };
+        const btnMap = {
+          preset_marking: 'btn-retouch-preset',
+          eraser: 'btn-retouch-eraser',
+          lasso: 'btn-retouch-lasso',
+          marking_draw: 'btn-retouch-marking',
+          cad_line: 'btn-retouch-cad-line'
+        };
+        Object.entries(btnMap).forEach(([key, id]) => {
+          const btn = document.getElementById(id);
+          if (!btn) return;
+          const isAct = nextTool === key;
+          btn.classList.toggle('border-blue-600', isAct);
+          btn.classList.toggle('bg-blue-50', isAct);
+          btn.classList.toggle('text-blue-900', isAct);
+        });
 
-      document.querySelectorAll('.retouch-tool-btn').forEach(btn => {
-        btn.className = btn.id === 'btn-retouch-cad-line'
-          ? 'retouch-tool-btn col-span-2 py-2 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-indigo-50 text-slate-800 flex items-center justify-center gap-1.5 transition'
-          : 'retouch-tool-btn py-2 px-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center justify-center gap-1.5 transition';
-      });
+        const badge = document.getElementById('retouch-active-badge');
+        const optBox = document.getElementById('retouch-options-box');
+        const presetOpts = document.getElementById('retouch-preset-opts');
+        const sizeRow = document.getElementById('retouch-size-row');
+        const sizeLbl = document.getElementById('retouch-size-label');
+        const asphaltOpts = document.getElementById('retouch-asphalt-opts');
+        const markingOpts = document.getElementById('retouch-marking-opts');
 
-      if (nextTool && btnMap[nextTool]) {
-        const activeBtn = document.getElementById(btnMap[nextTool]);
-        if (activeBtn) {
-          activeBtn.className = nextTool === 'cad_line'
-            ? 'retouch-tool-btn col-span-2 py-2 px-2.5 rounded-lg border border-indigo-600 bg-indigo-50 text-indigo-900 font-bold flex items-center justify-center gap-1.5 transition shadow-2xs'
-            : 'retouch-tool-btn py-2 px-2 rounded-lg border border-blue-600 bg-blue-50 text-blue-900 font-bold flex items-center justify-center gap-1.5 transition shadow-2xs';
+        if (badge) badge.classList.toggle('hidden', !nextTool);
+        if (optBox) optBox.classList.toggle('hidden', !nextTool);
+
+        if (nextTool) {
+          const isPreset = nextTool === 'preset_marking';
+          const isAsphalt = nextTool === 'eraser' || nextTool === 'lasso' || nextTool === 'pipette';
+          const isMarking = nextTool === 'marking_draw' || nextTool === 'cad_line';
+
+          if (presetOpts) presetOpts.classList.toggle('hidden', !isPreset);
+          if (sizeRow) sizeRow.classList.toggle('hidden', isPreset || nextTool === 'lasso');
+          if (sizeLbl) sizeLbl.textContent = isMarking ? 'Linienbreite' : 'Pinselbreite';
+          if (asphaltOpts) asphaltOpts.classList.toggle('hidden', !isAsphalt);
+          if (markingOpts) markingOpts.classList.toggle('hidden', !isMarking);
         }
+
+        updateCanvasToolButtons();
+        updateToolBanner();
+        renderCanvas();
       }
 
-      const badge = document.getElementById('retouch-active-badge');
-      const optBox = document.getElementById('retouch-options-box');
-      const presetOpts = document.getElementById('retouch-preset-opts');
-      const sizeRow = document.getElementById('retouch-size-row');
-      const sizeLbl = document.getElementById('retouch-size-label');
-      const asphaltOpts = document.getElementById('retouch-asphalt-opts');
-      const markingOpts = document.getElementById('retouch-marking-opts');
-
-      if (badge) badge.classList.toggle('hidden', !nextTool);
-      if (optBox) optBox.classList.toggle('hidden', !nextTool);
-
-      if (nextTool) {
-        const isPreset = nextTool === 'preset_marking';
-        const isAsphalt = nextTool === 'eraser' || nextTool === 'lasso' || nextTool === 'pipette';
-        const isMarking = nextTool === 'marking_draw' || nextTool === 'cad_line';
-
-        if (presetOpts) presetOpts.classList.toggle('hidden', !isPreset);
-        if (sizeRow) sizeRow.classList.toggle('hidden', isPreset || nextTool === 'lasso');
-        if (sizeLbl) sizeLbl.textContent = isMarking ? 'Linienbreite' : 'Pinselbreite';
-        if (asphaltOpts) asphaltOpts.classList.toggle('hidden', !isAsphalt);
-        if (markingOpts) markingOpts.classList.toggle('hidden', !isMarking);
+      function pushRetouchHistory() {
+        if (!state.bgRetouchCanvas) return;
+        const snap = document.createElement('canvas');
+        snap.width = state.bgWidth;
+        snap.height = state.bgHeight;
+        snap.getContext('2d').drawImage(state.bgRetouchCanvas, 0, 0);
+        state.retouchHistory.push(snap);
+        if (state.retouchHistory.length > 20) state.retouchHistory.shift();
       }
 
-      updateCanvasToolButtons();
+      function undoRetouch() {
       updateToolBanner();
       renderCanvas();
     }
@@ -2719,6 +2858,196 @@
       }
 
       c.restore();
+    }
+
+    /* ============================================================================
+       5. KOORDINATENTRANSFORMATION (BILDPIXEL <-> RECHTWINKLIGES MESSVERFAHREN)
+       ============================================================================ */
+    function rebuildBaselineCurve() {
+      const m = state.measure;
+      if (!m.isCurved || !Array.isArray(m.curvePoints) || m.curvePoints.length < 2) {
+        m.curveSamples = [];
+        return;
+      }
+
+      const pts = m.curvePoints;
+      m.originX = pts[0].x;
+      m.originY = pts[0].y;
+
+      const dense = [];
+      if (pts.length === 2) {
+        dense.push({ x: pts[0].x, y: pts[0].y });
+        dense.push({ x: pts[1].x, y: pts[1].y });
+      } else {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p0 = pts[Math.max(0, i - 1)];
+          const p1 = pts[i];
+          const p2 = pts[i + 1];
+          const p3 = pts[Math.min(pts.length - 1, i + 2)];
+          const steps = 16;
+          for (let st = 0; st < steps; st++) {
+            const t = st / steps;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            const x = 0.5 * (
+              (2 * p1.x) +
+              (-p0.x + p2.x) * t +
+              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+            );
+            const y = 0.5 * (
+              (2 * p1.y) +
+              (-p0.y + p2.y) * t +
+              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+            );
+            dense.push({ x, y });
+          }
+        }
+        dense.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
+      }
+
+      let acc = 0;
+      m.curveSamples = dense.map((p, idx) => {
+        if (idx > 0) {
+          acc += Math.hypot(p.x - dense[idx - 1].x, p.y - dense[idx - 1].y);
+        }
+        return { x: p.x, y: p.y, s: acc };
+      });
+
+      if (m.curveSamples.length >= 2) {
+        m.angleRad = Math.atan2(
+          m.curveSamples[1].y - m.curveSamples[0].y,
+          m.curveSamples[1].x - m.curveSamples[0].x
+        );
+      }
+    }
+
+    function screenToImage(sx, sy) {
+      const z = Math.max(0.05, state.view.zoom || 1);
+      return {
+        x: (sx - state.view.panX) / z,
+        y: (sy - state.view.panY) / z
+      };
+    }
+
+    function worldToMeasure(ix, iy) {
+      const m = state.measure;
+      const ppm = Math.max(1, m.pxPerMeter);
+
+      if (m.isCurved && Array.isArray(m.curveSamples) && m.curveSamples.length >= 2) {
+        const samples = m.curveSamples;
+        let bestDistSq = Infinity;
+        let bestS = 0;
+        let bestY = 0;
+
+        for (let i = 0; i < samples.length - 1; i++) {
+          const a = samples[i];
+          const b = samples[i + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const segLenSq = dx * dx + dy * dy;
+          if (segLenSq < 1e-8) continue;
+
+          let t = ((ix - a.x) * dx + (iy - a.y) * dy) / segLenSq;
+          if (i > 0 && i < samples.length - 2) {
+            t = Math.max(0, Math.min(1, t));
+          } else if (i === 0) {
+            t = Math.min(1, t);
+          } else if (i === samples.length - 2) {
+            t = Math.max(0, t);
+          }
+
+          const px = a.x + t * dx;
+          const py = a.y + t * dy;
+          const distSq = (ix - px) * (ix - px) + (iy - py) * (iy - py);
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            const segLen = Math.sqrt(segLenSq);
+            bestS = a.s + t * segLen;
+            const nx = (-dy / segLen) * m.yDir;
+            const ny = (dx / segLen) * m.yDir;
+            bestY = (ix - px) * nx + (iy - py) * ny;
+          }
+        }
+
+        return { x: bestS / ppm, y: bestY / ppm };
+      }
+
+      const dx = ix - m.originX;
+      const dy = iy - m.originY;
+      const cos = Math.cos(m.angleRad);
+      const sin = Math.sin(m.angleRad);
+      const nx = -sin * m.yDir;
+      const ny = cos * m.yDir;
+
+      return {
+        x: (dx * cos + dy * sin) / ppm,
+        y: (dx * nx + dy * ny) / ppm
+      };
+    }
+
+    function measureToWorld(mx, my) {
+      const m = state.measure;
+      const ppm = Math.max(1, m.pxPerMeter);
+
+      if (m.isCurved && Array.isArray(m.curveSamples) && m.curveSamples.length >= 2) {
+        const samples = m.curveSamples;
+        const targetS = mx * ppm;
+        const totalS = samples[samples.length - 1].s;
+
+        let a = samples[0];
+        let b = samples[1];
+        let segT = 0;
+
+        if (targetS <= 0) {
+          const segLen = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
+          segT = targetS / segLen;
+        } else if (targetS >= totalS) {
+          a = samples[samples.length - 2];
+          b = samples[samples.length - 1];
+          const segLen = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
+          segT = 1 + (targetS - totalS) / segLen;
+        } else {
+          for (let i = 0; i < samples.length - 1; i++) {
+            if (targetS >= samples[i].s && targetS <= samples[i + 1].s) {
+              a = samples[i];
+              b = samples[i + 1];
+              const span = Math.max(1e-5, b.s - a.s);
+              segT = (targetS - a.s) / span;
+              break;
+            }
+          }
+        }
+
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const segLen = Math.max(1e-5, Math.hypot(dx, dy));
+        const bx = a.x + segT * dx;
+        const by = a.y + segT * dy;
+        const nx = (-dy / segLen) * m.yDir;
+        const ny = (dx / segLen) * m.yDir;
+
+        return {
+          x: bx + my * ppm * nx,
+          y: by + my * ppm * ny
+        };
+      }
+
+      const cos = Math.cos(m.angleRad);
+      const sin = Math.sin(m.angleRad);
+      const nx = -sin * m.yDir;
+      const ny = cos * m.yDir;
+
+      return {
+        x: m.originX + mx * ppm * cos + my * ppm * nx,
+        y: m.originY + mx * ppm * sin + my * ppm * ny
+      };
+    }
+
+    function measureAngleToWorldRad(angleDeg) {
+      const m = state.measure;
+      return m.angleRad + m.yDir * ((angleDeg * Math.PI) / 180);
     }
 
     /* ============================================================================
@@ -5010,7 +5339,7 @@
         });
 
         document.getElementById('select-ai-model-tier')?.addEventListener('change', (e) => {
-          state.aiModelTier = e.target.value || 'pro';
+          state.aiModelTier = e.target.value || 'local';
         });
 
         document.getElementById('btn-ai-clean')?.addEventListener('click', runAiRoadCleanup);
