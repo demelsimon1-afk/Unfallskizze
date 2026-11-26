@@ -38,35 +38,41 @@ module.exports = async function handler(req, res) {
     let lastData = { error: 'Kein bildfähiges Gemini-Modell verfügbar' };
     let sawFreeTierLimitZero = isFreeMode;
 
-    // Bezahlte Bildgenerierungs-Modelle nur abfragen, wenn nicht ausdrücklich "free" gewählt wurde
-    if (!isFreeMode) {
-      // Verfügbare bildfähige Gemini-Modelle über die Models-API ermitteln (Imagen-Endpunkte ausschließen)
-      const discoveredModels = [];
-      try {
-        const listRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
-          {
-            method: 'GET',
-            headers: { 'x-goog-api-key': key }
-          }
-        );
+    // Verfügbare Gemini-Modelle dynamisch über die Google Models-API ermitteln
+    const discoveredImageModels = [];
+    const discoveredVisionModels = [];
+    try {
+      const listRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+        {
+          method: 'GET',
+          headers: { 'x-goog-api-key': key }
+        }
+      );
 
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          const available = Array.isArray(listData?.models) ? listData.models : [];
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const available = Array.isArray(listData?.models) ? listData.models : [];
 
-          for (const m of available) {
-            const name = (m.name || '').replace(/^models\//, '');
-            const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
-            if (methods.includes('generateContent') && /image/i.test(name) && !/imagen/i.test(name)) {
-              discoveredModels.push(name);
-            }
+        for (const m of available) {
+          const name = (m.name || '').replace(/^models\//, '');
+          const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+          if (!methods.includes('generateContent')) continue;
+          if (/imagen|embedding|tts|audio|live|veo|aqa/i.test(name)) continue;
+
+          if (/image/i.test(name)) {
+            discoveredImageModels.push(name);
+          } else if (/gemini/i.test(name)) {
+            discoveredVisionModels.push(name);
           }
         }
-      } catch (_) {
-        // Bei Fehler beim Abruf der Modellliste direkt mit den Standard-Modellen fortfahren
       }
+    } catch (_) {
+      // Bei Fehler beim Abruf der Modellliste direkt mit den Standard-Modellen fortfahren
+    }
 
+    // Bezahlte Bildgenerierungs-Modelle nur abfragen, wenn nicht ausdrücklich "free" gewählt wurde
+    if (!isFreeMode) {
       // Hochwertige Gemini-3-Pro- & 3.1-Flash-Bildmodelle je nach gewählter Qualitätsstufe priorisieren
       const tierPresets = {
         pro: [
@@ -93,7 +99,7 @@ module.exports = async function handler(req, res) {
       const selectedPreset = tierPresets[modelTier] || tierPresets.pro;
       const candidateModels = Array.from(new Set([
         ...selectedPreset,
-        ...discoveredModels
+        ...discoveredImageModels
       ].filter(Boolean)));
 
       const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -230,15 +236,35 @@ module.exports = async function handler(req, res) {
     }
 
     // 100 % kostenloser Free-Tier-Modus (ohne Guthaben / ohne Abrechnungskonto):
-    // Nutzt kostenlose Flash-Vision-Modelle mit deaktiviertem Thinking-Budget für schnelle, präzise Objekterkennung.
+    // Nutzt kostenlose Flash-Modelle (inkl. gemini-3.8-flash / gemini-flash-latest) für schnelle Objekterkennung.
     if (sawFreeTierLimitZero) {
-      const visionModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
-      let lastVisionError = '';
+      const prioritizedDiscovered = discoveredVisionModels.sort((a, b) => {
+        const score = (n) => {
+          if (/3\.8-flash/i.test(n)) return 1;
+          if (/flash-latest/i.test(n)) return 2;
+          if (/3\.\d+-flash|3-flash/i.test(n)) return 3;
+          if (/2\.5-flash/i.test(n)) return 4;
+          if (/flash/i.test(n)) return 5;
+          return 10;
+        };
+        return score(a) - score(b);
+      });
+
+      const visionModels = Array.from(new Set([
+        'gemini-3.8-flash',
+        'gemini-flash-latest',
+        ...prioritizedDiscovered,
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash'
+      ].filter(Boolean)));
+
+      const visionErrors = [];
 
       for (const vModel of visionModels) {
         const genConfigs = [
-          { temperature: 0.1, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
-          { temperature: 0.1, responseMimeType: 'application/json' }
+          { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+          { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+          { temperature: 0.1, maxOutputTokens: 4096 }
         ];
 
         for (const genCfg of genConfigs) {
@@ -260,9 +286,9 @@ module.exports = async function handler(req, res) {
                       {
                         text: [
                           'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                          'Return ONLY a valid JSON object with two keys:',
+                          'Return ONLY a compact valid JSON object with two keys:',
                           '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
-                          '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
+                          '2. "vegetation": array of simplified polygons (max 8 polygons, max 10 [y, x] points each in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
                           'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
                         ].join(' ')
                       },
@@ -290,7 +316,7 @@ module.exports = async function handler(req, res) {
                 .trim();
               const jsonMatch = rawText.match(/\{[\s\S]*\}/);
               if (!jsonMatch) {
-                lastVisionError = `${vModel}: Keine JSON-Antwort`;
+                visionErrors.push(`${vModel}: Keine JSON-Antwort`);
                 break;
               }
               const parsed = JSON.parse(jsonMatch[0]);
@@ -304,7 +330,8 @@ module.exports = async function handler(req, res) {
               });
             } else {
               const vErr = await vRes.json().catch(() => ({}));
-              lastVisionError = vErr?.error?.message || `HTTP ${vRes.status}`;
+              const errMsg = vErr?.error?.message || `HTTP ${vRes.status}`;
+              visionErrors.push(`${vModel}: ${errMsg}`);
               if (vRes.status === 401 || vRes.status === 403) {
                 return res.status(vRes.status).json(vErr);
               }
@@ -312,14 +339,15 @@ module.exports = async function handler(req, res) {
             }
           } catch (vEx) {
             clearTimeout(vTimer);
-            lastVisionError = vEx?.message || 'Vision-Fehler';
+            visionErrors.push(`${vModel}: ${vEx?.message || 'Vision-Fehler'}`);
             break;
           }
         }
       }
 
+      const relevantError = visionErrors.find(e => !/no longer available|not found/i.test(e)) || visionErrors[0] || 'Kein Modell verfügbar';
       return res.status(429).json({
-        error: `Kostenlose KI-Bereinigung konnte nicht abgeschlossen werden: ${lastVisionError}`
+        error: `Kostenlose KI-Bereinigung konnte nicht abgeschlossen werden (${relevantError})`
       });
     }
 
