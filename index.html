@@ -216,14 +216,25 @@
             <summary class="flex items-center justify-between gap-2 text-xs font-bold text-indigo-950 cursor-pointer select-none">
               <span class="flex items-center gap-1.5">
                 <svg class="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-                KI-Bereinigung (Optional)
+                KI-Bereinigung (Pro / 2K)
               </span>
               <span id="ai-active-badge" class="hidden px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">Aktiv</span>
             </summary>
             <div class="pt-2 space-y-2">
               <p class="text-[11px] text-indigo-900/85 leading-snug">
-                <strong>Fahrbahn bereinigen:</strong> Entfernt Fahrzeuge, Schatten und Außen-Vegetation aus dem Luftbild – ohne neue Straßen oder Markierungen zu erfinden.
+                <strong>Fahrbahn bereinigen:</strong> Entfernt Fahrzeuge, Schatten und Außen-Vegetation hochauflösend aus dem Luftbild – ohne neue Straßen oder Markierungen zu erfinden.
               </p>
+
+              <!-- Modell- & Qualitätsstufe für Bezahlt-Accounts -->
+              <div class="space-y-1">
+                <label for="select-ai-model-tier" class="block text-[10.5px] font-semibold text-indigo-950">KI-Modell / Bildqualität:</label>
+                <select id="select-ai-model-tier" class="w-full bg-white border border-indigo-300 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="pro" selected>Gemini 3 Pro Image (Höchste Qualität · 2K)</option>
+                  <option value="flash3">Gemini 3.1 Flash Image (Schnell &amp; Scharf · 2K)</option>
+                  <option value="flash25">Gemini 2.5 Flash Image (Bewährter Standard)</option>
+                </select>
+              </div>
+
               <button id="btn-ai-clean" type="button" class="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <svg id="icon-ai-sparkle" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
                 <svg id="icon-ai-spinner" class="hidden w-4 h-4 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
@@ -252,15 +263,15 @@
                 <!-- Optionaler API-Key für externes Hosting (z.B. Vercel) -->
                 <details id="ai-apikey-details" class="pt-1.5 border-t border-indigo-200/70 text-[11px]">
                   <summary class="cursor-pointer select-none text-indigo-800/90 font-semibold flex items-center justify-between">
-                    <span>API-Key für Vercel (100 % Kostenlos)</span>
-                    <span id="ai-apikey-status" class="text-[10px] font-mono text-indigo-600">Standard</span>
+                    <span>API-Key (Google AI Studio / Vercel)</span>
+                    <span id="ai-apikey-status" class="text-[10px] font-mono text-indigo-600">Vercel-Env</span>
                   </summary>
                   <div class="pt-2 space-y-1.5">
                     <p class="text-[10.5px] text-indigo-900/80 leading-snug">
-                      Mit einem <strong>kostenlosen Google AI Studio Key</strong> bereinigt Gemini automatisch Fahrzeuge &amp; Grünflächen. Falls im Google-Konto Abrechnung aktiv ist, wird zusätzlich die direkte Pixel-Generierung genutzt.
+                      Wenn dein <strong>GEMINI_API_KEY</strong> in Vercel hinterlegt ist, bleibt dieses Feld leer. Optional kannst du hier direkt einen eigenen Google-AI-Studio-Key testen.
                     </p>
                     <div class="flex gap-1">
-                      <input id="input-gemini-apikey" type="password" placeholder="AQ.Ab8... oder AIzaSy..." autocomplete="off" class="flex-1 min-w-0 px-2 py-1 rounded border border-indigo-300 bg-white font-mono text-[11px] text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <input id="input-gemini-apikey" type="password" placeholder="AIzaSy... (optional)" autocomplete="off" class="flex-1 min-w-0 px-2 py-1 rounded border border-indigo-300 bg-white font-mono text-[11px] text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" />
                       <button id="btn-save-apikey" type="button" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition shrink-0">
                         OK
                       </button>
@@ -1294,6 +1305,8 @@
         aiActive: false,
         aiBlend: 1.0, // 0.0 = Original, 1.0 = KI-bereinigt
         aiBusy: false,
+        aiModelTier: 'pro', // 'pro' | 'flash3' | 'flash25'
+        aiUsedModel: '',
 
         // Händische Markierungs-Korrektur & vordefinierte Markierungen
         retouchTool: null, // 'preset_marking' | 'eraser' | 'lasso' | 'marking_draw' | 'cad_line' | 'pipette'
@@ -1507,13 +1520,22 @@
         const blendRng = document.getElementById('rng-ai-blend');
         const btnToggle = document.getElementById('btn-ai-toggle');
 
-        if (badge) badge.classList.toggle('hidden', !hasAiCanvas || !state.aiActive);
+        if (badge) {
+          badge.classList.toggle('hidden', !hasAiCanvas || !state.aiActive);
+          if (state.aiUsedModel) {
+            badge.textContent = /pro/i.test(state.aiUsedModel)
+              ? 'Pro 2K ✓'
+              : (/3\.1/i.test(state.aiUsedModel) ? '3.1 HD ✓' : 'Aktiv ✓');
+          } else {
+            badge.textContent = 'Aktiv';
+          }
+        }
         if (btnClean) btnClean.disabled = !state.hasBackground || state.aiBusy;
         if (iconSparkle) iconSparkle.classList.toggle('hidden', state.aiBusy);
         if (iconSpinner) iconSpinner.classList.toggle('hidden', !state.aiBusy);
         if (btnCleanText) {
           btnCleanText.textContent = state.aiBusy
-            ? 'KI bereinigt Luftbild…'
+            ? 'Gemini Pro berechnet HD-Bild…'
             : (hasAiCanvas ? 'Erneut bereinigen' : 'Fahrbahn bereinigen');
         }
         if (resultBar) resultBar.classList.toggle('hidden', !hasAiCanvas);
@@ -1692,15 +1714,17 @@
       // Bereinigt das echte Luftbild pixelgenau ohne synthetische Straßen oder erfundene Linien
       async function renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, customKey) {
         const strictPrompt = [
-          'Edit ONLY this exact aerial photo at 1:1 pixel alignment.',
+          'Edit ONLY this exact aerial road photograph at strict 1:1 pixel alignment and maximum photorealistic sharpness.',
           'STRICT ANTI-HALLUCINATION RULES:',
-          '1. Keep the exact real road layout, real intersections, real curbs, and real road markings from this photo.',
-          '2. NEVER invent, add, extend, or imagine any crosswalks (zebra crossings), pedestrian paths, streets, roads, lanes, arrows, or markings that are not visibly present in the input photo.',
+          '1. Preserve the exact real road geometry, real intersections, real curbs, asphalt textures, bike lane colors, and existing road markings from this input photo without shifting a single pixel.',
+          '2. NEVER invent, add, extend, or imagine any crosswalks (zebra crossings), pedestrian paths, streets, roads, lanes, arrows, or markings that are not clearly visible in the input photo.',
           '3. If a crosswalk or zebra crossing is NOT clearly visible in the input photo, do NOT draw one anywhere (especially near intersections, junctions, or corners). Only preserve zebra stripes that already exist in the exact same spot in the input photo.',
-          '4. Remove ONLY vehicles, pedestrians, shadows, and surrounding vegetation (trees, grass, bushes) outside the road/curb area.',
-          '5. Fill areas under removed vehicles with the surrounding asphalt and replace outside vegetation with a clean neutral light-gray background (#e2e8f0).'
+          '4. Remove ONLY vehicles, pedestrians, vehicle shadows, and surrounding vegetation (trees, grass, bushes) outside the road/curb area.',
+          '5. Reconstruct the asphalt surface cleanly where vehicles were removed and replace outside vegetation with a uniform neutral light-gray background (#e2e8f0).'
         ].join(' ');
 
+        const tier = state.aiModelTier || 'pro';
+        const targetImageSize = tier === 'flash25' ? '1K' : '2K';
         const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
         const activeKey = customKey || storedKey || (GEMINI_API_KEY || '').trim();
 
@@ -1714,7 +1738,9 @@
                 prompt: strictPrompt,
                 imageBase64: base64Data,
                 mimeType: sendMime,
-                aspectRatio: targetAspect
+                aspectRatio: targetAspect,
+                modelTier: tier,
+                imageSize: targetImageSize
               })
             });
           } catch (_) {
@@ -1724,7 +1750,7 @@
           if (proxyRes && proxyRes.ok) {
             const proxyData = await proxyRes.json();
             if (proxyData?.fallbackMode === 'vision_cleanup' && proxyData?.detections) {
-              return { mode: 'vision_cleanup', detections: proxyData.detections };
+              return { mode: 'vision_cleanup', detections: proxyData.detections, model: proxyData.model || 'gemini-2.5-flash' };
             }
             const parts = proxyData?.candidates?.[0]?.content?.parts || [];
             const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
@@ -1736,7 +1762,7 @@
                 outImg.onerror = reject;
                 outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
               });
-              return { mode: 'image', img: outImg };
+              return { mode: 'image', img: outImg, model: proxyData.usedModel || 'gemini-3-pro-image' };
             }
           } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
             const errInfo = await proxyRes.json().catch(() => ({}));
@@ -1748,105 +1774,76 @@
         }
 
         if (activeKey) {
-          const imageModels = [
-            'gemini-2.5-flash-image',
-            'gemini-3.1-flash-image'
-          ];
+          const tierMap = {
+            pro: ['gemini-3-pro-image-preview', 'gemini-3-pro-image', 'gemini-3.1-flash-image-preview', 'gemini-2.5-flash-image'],
+            flash3: ['gemini-3.1-flash-image-preview', 'gemini-3.1-flash-image', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image'],
+            flash25: ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview']
+          };
+          const imageModels = tierMap[tier] || tierMap.pro;
           let res = null;
+          let usedModel = '';
           let lastErrJson = {};
+
           for (const modelName of imageModels) {
-            const ctrl = new AbortController();
-            const tId = setTimeout(() => ctrl.abort(), 14000);
-            try {
-              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`;
-              res = await fetch(apiUrl, {
-                method: 'POST',
-                signal: ctrl.signal,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{
-                    parts: [
-                      { text: strictPrompt },
-                      { inlineData: { mimeType: sendMime, data: base64Data } }
-                    ]
-                  }],
-                  generationConfig: {
-                    responseModalities: ['TEXT', 'IMAGE'],
-                    imageConfig: { aspectRatio: targetAspect }
-                  }
-                })
-              });
-            } catch (_) {
-              res = null;
-            } finally {
-              clearTimeout(tId);
-            }
-            if (res && res.ok) break;
-            if (res) {
-              lastErrJson = await res.json().catch(() => ({}));
-              const errStr = JSON.stringify(lastErrJson);
-              if (res.status === 429 && (/limit:\s*0/i.test(errStr) || /free_tier/i.test(errStr))) {
-                break;
+            const isGemini3 = /gemini-3/i.test(modelName);
+            const configsToTry = isGemini3
+              ? [
+                  { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: targetAspect, imageSize: targetImageSize } },
+                  { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: targetAspect } }
+                ]
+              : [
+                  { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: targetAspect } }
+                ];
+
+            for (const genCfg of configsToTry) {
+              const ctrl = new AbortController();
+              const tId = setTimeout(() => ctrl.abort(), 50000);
+              try {
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`;
+                res = await fetch(apiUrl, {
+                  method: 'POST',
+                  signal: ctrl.signal,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [
+                        { text: strictPrompt },
+                        { inlineData: { mimeType: sendMime, data: base64Data } }
+                      ]
+                    }],
+                    generationConfig: genCfg
+                  })
+                });
+              } catch (_) {
+                res = null;
+              } finally {
+                clearTimeout(tId);
               }
-            }
-          }
 
-          if (res && res.ok) {
-            const data = await res.json();
-            const parts = data?.candidates?.[0]?.content?.parts || [];
-            const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
-            if (imgPart) {
-              const mime = imgPart.inlineData.mimeType || 'image/png';
-              const outImg = new Image();
-              await new Promise((resolve, reject) => {
-                outImg.onload = resolve;
-                outImg.onerror = reject;
-                outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
-              });
-              return { mode: 'image', img: outImg };
-            }
-          }
-
-          // Free-Tier-Fallback für direkt im Browser hinterlegte Keys (gemini-2.5-flash)
-          const vRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(activeKey)}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    {
-                      text: [
-                        'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                        'Return ONLY valid JSON with two keys:',
-                        '1. "vehicles": array of bounding boxes [ymin, xmin, ymax, xmax] for every vehicle and dark vehicle shadow on the road.',
-                        '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, and green areas OUTSIDE the road curbs.'
-                      ].join(' ')
-                    },
-                    { inlineData: { mimeType: sendMime, data: base64Data } }
-                  ]
-                }],
-                generationConfig: {
-                  temperature: 0.1,
-                  responseMimeType: 'application/json'
+              if (res && res.ok) {
+                const data = await res.json();
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+                if (imgPart) {
+                  usedModel = modelName;
+                  const mime = imgPart.inlineData.mimeType || 'image/png';
+                  const outImg = new Image();
+                  await new Promise((resolve, reject) => {
+                    outImg.onload = resolve;
+                    outImg.onerror = reject;
+                    outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
+                  });
+                  return { mode: 'image', img: outImg, model: usedModel };
                 }
-              })
-            }
-          ).catch(() => null);
-
-          if (vRes && vRes.ok) {
-            const vData = await vRes.json().catch(() => ({}));
-            const rawText = (vData?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('\n').trim();
-            const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-            const parsed = JSON.parse(cleanedJson);
-            return {
-              mode: 'vision_cleanup',
-              detections: {
-                vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+              } else if (res) {
+                lastErrJson = await res.json().catch(() => ({}));
+                const errStr = JSON.stringify(lastErrJson);
+                if (res.status === 429 && (/limit:\s*0/i.test(errStr) || /free_tier/i.test(errStr))) {
+                  break;
+                }
+                if (res.status !== 400) break;
               }
-            };
+            }
           }
 
           const detail = lastErrJson?.error?.message || `HTTP ${res ? res.status : 'Netzwerk'}`;
@@ -1892,7 +1889,7 @@
           outImg.onerror = reject;
           outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
         });
-        return { mode: 'image', img: outImg };
+        return { mode: 'image', img: outImg, model: 'gemini-3.1-flash-image' };
       }
 
       async function runAiRoadCleanup() {
@@ -1905,8 +1902,8 @@
 
         try {
           const sourceForAi = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-          // Bildqualität und Auflösung für schnellere, stabilere KI-Übertragung reduzieren
-          const maxDim = 512;
+          // Hohe Eingangsauflösung (bis 1280 px) für gestochen scharfe Markierungen & Bordsteine
+          const maxDim = state.aiModelTier === 'flash25' ? 896 : 1280;
           const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
           const sendW = Math.max(64, Math.round(state.bgWidth * scale));
           const sendH = Math.max(64, Math.round(state.bgHeight * scale));
@@ -1915,23 +1912,24 @@
           rawScaled.height = sendH;
           const tCtx = rawScaled.getContext('2d');
           tCtx.imageSmoothingEnabled = true;
-          tCtx.imageSmoothingQuality = 'medium';
+          tCtx.imageSmoothingQuality = 'high';
           tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
 
           const sendMime = 'image/jpeg';
-          const jpegQuality = 0.72;
+          const jpegQuality = 0.88;
           const dataUrl = rawScaled.toDataURL(sendMime, jpegQuality);
           const base64Data = dataUrl.split(',')[1];
           const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
 
           const outcome = await renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, '');
+          state.aiUsedModel = outcome.model || '';
 
           if (outcome.mode === 'vision_cleanup') {
             state.bgAiCanvas = applyVisionCleanupToCanvas(sourceForAi, outcome.detections);
             state.aiActive = true;
             state.aiBlend = 1.0;
             processBackgroundImage();
-            showToast('Luftbild mit kostenlosem Gemini-Key bereinigt (Fahrzeuge & Grünflächen entfernt).', 'success');
+            showToast('Luftbild bereinigt (Fallback-Modus, da für den Key kein Pro-Bildkontingent aktiv war).', 'warning');
           } else {
             const aiCanvas = document.createElement('canvas');
             aiCanvas.width = state.bgWidth;
@@ -1941,16 +1939,17 @@
             aCtx.imageSmoothingQuality = 'high';
             aCtx.drawImage(outcome.img, 0, 0, state.bgWidth, state.bgHeight);
 
-            state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.35);
+            state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.28);
             state.aiActive = true;
             state.aiBlend = 1.0;
             processBackgroundImage();
-            showToast('Luftbild bereinigt – nur vorhandene Straßen und Markierungen wurden übernommen.', 'success');
+            showToast(`Luftbild hochauflösend mit ${outcome.model || 'Gemini Pro'} bereinigt.`, 'success');
           }
         } catch (err) {
           state.bgAiCanvas = null;
           state.aiActive = false;
           state.aiBlend = 0.0;
+          state.aiUsedModel = '';
           processBackgroundImage();
 
           const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
@@ -4926,6 +4925,10 @@
             showToast('Eigener API-Key entfernt.', 'info');
           }
           syncApiKeyStatus();
+        });
+
+        document.getElementById('select-ai-model-tier')?.addEventListener('change', (e) => {
+          state.aiModelTier = e.target.value || 'pro';
         });
 
         document.getElementById('btn-ai-clean')?.addEventListener('click', runAiRoadCleanup);
