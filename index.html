@@ -248,6 +248,25 @@
                     </button>
                   </div>
                 </div>
+
+                <!-- Optionaler API-Key für externes Hosting (z.B. Vercel) -->
+                <details id="ai-apikey-details" class="pt-1.5 border-t border-indigo-200/70 text-[11px]">
+                  <summary class="cursor-pointer select-none text-indigo-800/90 font-semibold flex items-center justify-between">
+                    <span>API-Key für Vercel (100 % Kostenlos)</span>
+                    <span id="ai-apikey-status" class="text-[10px] font-mono text-indigo-600">Standard</span>
+                  </summary>
+                  <div class="pt-2 space-y-1.5">
+                    <p class="text-[10.5px] text-indigo-900/80 leading-snug">
+                      Wenn <strong>GEMINI_API_KEY</strong> auf dem Vercel-Server hinterlegt ist, läuft die KI für alle Besucher automatisch. Alternativ hier deinen eigenen kostenlosen Key eintragen:
+                    </p>
+                    <div class="flex gap-1">
+                      <input id="input-gemini-apikey" type="password" placeholder="AQ.Ab8... oder AIzaSy..." autocomplete="off" class="flex-1 min-w-0 px-2 py-1 rounded border border-indigo-300 bg-white font-mono text-[11px] text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <button id="btn-save-apikey" type="button" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition shrink-0">
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                </details>
               </div>
             </details>
 
@@ -1044,6 +1063,9 @@
     (() => {
       'use strict';
 
+      // Optional: Hier deinen Google AI Studio API-Key eintragen (z.B. 'AQ.Ab8...')
+      const GEMINI_API_KEY = '';
+
       /* ============================================================================
          1. DEFINITIONEN: VERKEHRSARTEN (MIT VISUELLEN SVG-ICONS) & SPURARTEN
          ============================================================================ */
@@ -1572,6 +1594,121 @@
         return best.label;
       }
 
+      function renderVectorRoadPlanToCanvas(plan, w, h) {
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const c = out.getContext('2d');
+
+        // 1. Neutraler Hintergrund ohne Außen-Vegetation
+        c.fillStyle = '#e2e8f0';
+        c.fillRect(0, 0, w, h);
+
+        const toPx = (pt) => ({
+          x: (Math.max(0, Math.min(1000, Number(pt[0]) || 0)) / 1000) * w,
+          y: (Math.max(0, Math.min(1000, Number(pt[1]) || 0)) / 1000) * h
+        });
+
+        // 2. Fahrbahnflächen & Bordsteinkanten zeichnen
+        const asphalt = /^#[0-9a-fA-F]{6}$/.test(plan?.asphaltColor || '') ? plan.asphaltColor : '#3f4652';
+        const roads = Array.isArray(plan?.roads) ? plan.roads : [];
+        roads.forEach(r => {
+          const poly = Array.isArray(r?.polygon) ? r.polygon.map(toPx) : [];
+          if (poly.length < 3) return;
+          c.save();
+          c.fillStyle = asphalt;
+          c.strokeStyle = '#94a3b8';
+          c.lineWidth = Math.max(2, Math.min(w, h) * 0.003);
+          c.lineJoin = 'round';
+          c.beginPath();
+          poly.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
+          c.closePath();
+          c.fill();
+          c.stroke();
+          c.restore();
+        });
+
+        // 3. Verkehrsinseln / Mittelstreifen zeichnen
+        const islands = Array.isArray(plan?.islands) ? plan.islands : [];
+        islands.forEach(isl => {
+          const poly = Array.isArray(isl?.polygon) ? isl.polygon.map(toPx) : [];
+          if (poly.length < 3) return;
+          c.save();
+          c.fillStyle = '#cbd5e1';
+          c.strokeStyle = '#64748b';
+          c.lineWidth = Math.max(2, Math.min(w, h) * 0.0025);
+          c.lineJoin = 'round';
+          c.beginPath();
+          poly.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
+          c.closePath();
+          c.fill();
+          c.stroke();
+          c.restore();
+        });
+
+        // 4. Erkannte Fahrbahnmarkierungen gestochen scharf zeichnen
+        const markings = Array.isArray(plan?.markings) ? plan.markings : [];
+        const baseScale = Math.min(w, h) / 1000;
+        markings.forEach(m => {
+          const pts = Array.isArray(m?.points) ? m.points.map(toPx) : [];
+          if (pts.length === 0) return;
+          const col = m.color === 'yellow' ? '#facc15' : '#ffffff';
+          const strokeW = Math.max(2, (Number(m.width) || 4) * baseScale);
+          const type = m.type || 'solid_line';
+
+          if (type === 'crosswalk' && pts.length >= 2) {
+            drawPredefinedMarking(c, 'crosswalk', col, Math.max(18, strokeW * 6.5), pts[0], pts[pts.length - 1], 0);
+            return;
+          }
+          if (type === 'hatched_area' && pts.length >= 2) {
+            drawPredefinedMarking(c, 'hatched_area', col, Math.max(16, strokeW * 5.5), pts[0], pts[pts.length - 1], 0);
+            return;
+          }
+          if (['arrow_straight', 'arrow_left', 'arrow_right', 'yield_triangle'].includes(type)) {
+            const ang = pts.length >= 2
+              ? (Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180) / Math.PI
+              : 0;
+            drawPredefinedMarking(c, type, col, Math.max(24, strokeW * 8), pts[0], null, ang);
+            return;
+          }
+
+          if (pts.length < 2) return;
+          c.save();
+          c.strokeStyle = col;
+          c.lineCap = 'butt';
+          c.lineJoin = 'round';
+
+          if (type === 'double_line') {
+            c.lineWidth = strokeW;
+            c.setLineDash([]);
+            for (const side of [-1, 1]) {
+              c.beginPath();
+              pts.forEach((p, idx) => {
+                const prev = pts[Math.max(0, idx - 1)];
+                const next = pts[Math.min(pts.length - 1, idx + 1)];
+                const dx = next.x - prev.x;
+                const dy = next.y - prev.y;
+                const len = Math.max(1e-5, Math.hypot(dx, dy));
+                const ox = (-dy / len) * strokeW * 1.35 * side;
+                const oy = (dx / len) * strokeW * 1.35 * side;
+                if (idx === 0) c.moveTo(p.x + ox, p.y + oy);
+                else c.lineTo(p.x + ox, p.y + oy);
+              });
+              c.stroke();
+            }
+          } else {
+            c.lineWidth = type === 'stop_line' ? Math.max(5, strokeW * 2.1) : strokeW;
+            c.setLineDash(type === 'dashed_line' ? [strokeW * 4.5, strokeW * 4.5] : []);
+            c.beginPath();
+            pts.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
+            c.stroke();
+          }
+          c.restore();
+        });
+
+        return out;
+      }
+
       async function runAiRoadCleanup() {
         if (!state.hasBackground || !state.bgOriginalCanvas || state.aiBusy) return;
         const overlay = document.getElementById('ai-loading-overlay');
@@ -1586,7 +1723,6 @@
             sourceForAi = await ensureCorsMapTwinCanvas();
           }
 
-          // Verlustfreies PNG mit hoher Auflösung (bis 1536px) für maximale Detailtreue senden
           const maxDim = 1536;
           const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
           const sendW = Math.max(64, Math.round(state.bgWidth * scale));
@@ -1599,13 +1735,92 @@
           tCtx.imageSmoothingQuality = 'high';
           tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
 
-          // Vorab-Kontrast- & Kantenschärfung, damit auch feine Leitlinien im Satellitenbild klar erkannt werden
           const tempCanvas = applyCrispUnsharpMask(rawScaled, 0.75);
-
           const dataUrl = tempCanvas.toDataURL('image/png');
           const base64Data = dataUrl.split(',')[1];
-          const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
 
+          const freePrompt = [
+            'Analyze this top-down aerial image of a road/intersection and extract the exact 1:1 road geometry and ONLY the visible painted road markings using normalized coordinates from 0 to 1000 (0,0 = top-left, 1000,1000 = bottom-right).',
+            'Ignore all vehicles, shadows, and surrounding vegetation (trees, grass, bushes).',
+            'Return valid JSON with this exact structure:',
+            '{"asphaltColor":"#3f4652","roads":[{"polygon":[[x,y],[x,y],...]}],"islands":[{"polygon":[[x,y],[x,y],...]}],"markings":[{"type":"dashed_line|solid_line|double_line|stop_line|crosswalk|hatched_area|arrow_straight|arrow_left|arrow_right|yield_triangle","color":"white|yellow","width":4,"points":[[x,y],[x,y],...]}]}',
+            'Only include road markings that are genuinely visible in the aerial image; do NOT invent markings on unmarked stretches.'
+          ].join(' ');
+
+          const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
+          const customKey = storedKey || (GEMINI_API_KEY || '').trim();
+
+          // 1. Geschützter Vercel-Server-Endpunkt (/api/gemini) – für alle Besucher nutzbar, Key bleibt unsichtbar
+          if (!customKey && window.location.protocol.startsWith('http')) {
+            try {
+              const proxyRes = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: freePrompt, imageBase64: base64Data })
+              });
+              if (proxyRes.ok) {
+                const proxyData = await proxyRes.json();
+                const rawText = proxyData?.candidates?.[0]?.content?.parts?.[0]?.text || proxyData?.text || '{}';
+                const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+                const plan = JSON.parse(cleanedJson);
+                state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
+                state.aiActive = true;
+                state.aiBlend = 1.0;
+                processBackgroundImage();
+                showToast('Scharfer Fahrbahnverlauf erzeugt.', 'success');
+                return;
+              } else if (proxyRes.status === 500) {
+                const errInfo = await proxyRes.json().catch(() => ({}));
+                if (errInfo?.error === 'MISSING_KEY') {
+                  showToast('Bitte GEMINI_API_KEY in den Vercel Environment Variables hinterlegen.', 'warning');
+                }
+              }
+            } catch (_) {
+              // Kein /api/gemini Endpunkt vorhanden -> weiter mit lokalem Key oder Vorschau-Modus
+            }
+          }
+
+          if (customKey) {
+            // 100 % KOSTENLOSES FREE-TIER-MODELL (gemini-2.5-flash) für eigenes Hosting
+            const freeUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(customKey)}`;
+            const res = await fetch(freeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: freePrompt },
+                    { inlineData: { mimeType: 'image/png', data: base64Data } }
+                  ]
+                }],
+                generationConfig: {
+                  responseMimeType: 'application/json',
+                  temperature: 0.1
+                }
+              })
+            });
+
+            if (!res.ok) {
+              const err = new Error(`HTTP ${res.status}`);
+              err.status = res.status;
+              throw err;
+            }
+
+            const data = await res.json();
+            const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+            const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+            const plan = JSON.parse(cleanedJson);
+
+            state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
+            state.aiActive = true;
+            state.aiBlend = 1.0;
+            processBackgroundImage();
+            showToast('Scharfer Fahrbahnverlauf (Free Tier) erzeugt.', 'success');
+            return;
+          }
+
+          // Standard-Modus in der Gemini-Vorschau (ohne eigenen Key)
+          const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
           const promptText = [
             'Render a razor-sharp, high-definition CAD-style top-down orthogonal road plan from this aerial image with exact 1:1 pixel alignment.',
             'ROAD MARKING RECONSTRUCTION RULES:',
@@ -1616,9 +1831,7 @@
             '5. Remove all surrounding vegetation (trees, bushes, grass, lawns) outside the road/curb area and replace outside surroundings with a clean, uniform neutral light-gray background (#e2e8f0).'
           ].join(' ');
 
-          const apiKey = '';
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`;
-
+          const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=';
           const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1636,17 +1849,16 @@
             })
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+          if (!response || !response.ok) {
+            const err = new Error(`HTTP ${response ? response.status : 'Netzwerk'}`);
+            err.status = response ? response.status : 0;
+            throw err;
           }
 
           const result = await response.json();
           const parts = result?.candidates?.[0]?.content?.parts || [];
           const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
-
-          if (!imgPart) {
-            throw new Error('Kein Bild in der KI-Antwort');
-          }
+          if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
 
           const mime = imgPart.inlineData.mimeType || 'image/png';
           const outImg = new Image();
@@ -1664,20 +1876,29 @@
           aCtx.imageSmoothingQuality = 'high';
           aCtx.drawImage(outImg, 0, 0, state.bgWidth, state.bgHeight);
 
-          // Nachgeschaltete Kantenschärfung für gestochen scharfe Linien auch beim Hineinzoomen
           state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.45);
           state.aiActive = true;
           state.aiBlend = 1.0;
           processBackgroundImage();
           showToast('Scharfes Fahrbahnbild mit erkannten Markierungen erzeugt.', 'success');
         } catch (err) {
-          // Lokaler Schärfe-Fallback, falls keine Online-API verfügbar ist
           const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
           state.bgAiCanvas = applyLocalSharpFallback(fallbackSrc);
           state.aiActive = true;
           state.aiBlend = 1.0;
           processBackgroundImage();
-          showToast('Lokale Schärfung angewendet (KI-Dienst derzeit nicht erreichbar).', 'warning');
+
+          const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
+          const hasAnyKey = Boolean(storedKey || (GEMINI_API_KEY || '').trim());
+          if (!hasAnyKey && (err?.status === 400 || err?.status === 403)) {
+            const keyDetails = document.getElementById('ai-apikey-details');
+            const keyInput = document.getElementById('input-gemini-apikey');
+            if (keyDetails) keyDetails.open = true;
+            if (keyInput) keyInput.focus();
+            showToast('Auf Vercel bitte unter „API-Key für Vercel“ deinen kostenlosen Key eintragen.', 'warning');
+          } else {
+            showToast('Lokale Schärfung angewendet (KI-Dienst derzeit nicht erreichbar).', 'warning');
+          }
         } finally {
           state.aiBusy = false;
           updateAiUI();
@@ -1766,7 +1987,6 @@
           showToast('Bitte laden Sie zuerst ein Luftbild.', 'warning');
           return;
         }
-        // Erneuter Klick deaktiviert das Werkzeug
         if (state.retouchTool === toolName) {
           toolName = null;
         }
@@ -1850,7 +2070,6 @@
           const sh = Math.min(state.bgHeight - sy, r * 2);
           const data = pCtx.getImageData(sx, sy, sw, sh).data;
 
-          // Dunklere Straßenpixel (Asphalt statt heller weißer Linie) bevorzugen
           const pixels = [];
           for (let i = 0; i < data.length; i += 16) {
             const R = data[i];
@@ -2027,7 +2246,6 @@
           targetCtx.lineWidth = borderW;
           targetCtx.strokeRect(0, -halfW, dist, halfW * 2);
 
-          // Diagonale Schraffur innerhalb der Sperrfläche clippen
           targetCtx.beginPath();
           targetCtx.rect(0, -halfW, dist, halfW * 2);
           targetCtx.clip();
@@ -2041,7 +2259,6 @@
             targetCtx.stroke();
           }
         } else {
-          // Punkt-Symbole (Pfeile, Vorfahrt-Dreieck, Fahrrad, Parkbucht)
           const s = Math.max(14, sizePx);
           const rad = (angleDeg * Math.PI) / 180;
           targetCtx.translate(p1.x, p1.y);
@@ -2073,7 +2290,6 @@
             targetCtx.lineTo(s * 0.25, dir * s * 0.42);
             targetCtx.stroke();
 
-            // Pfeilspitze
             const tipY = dir * s * 0.48;
             const headS = s * 0.18;
             targetCtx.beginPath();
@@ -2087,24 +2303,20 @@
             const lw = Math.max(2.2, s * 0.11);
             targetCtx.lineWidth = lw;
             targetCtx.lineCap = 'round';
-            // Hauptstamm geradeaus
             targetCtx.beginPath();
             targetCtx.moveTo(-s * 0.48, -dir * s * 0.1);
             targetCtx.lineTo(s * 0.36, -dir * s * 0.1);
             targetCtx.stroke();
-            // Spitze geradeaus
             targetCtx.beginPath();
             targetCtx.moveTo(s * 0.5, -dir * s * 0.1);
             targetCtx.lineTo(s * 0.28, -dir * s * 0.1 - s * 0.15);
             targetCtx.lineTo(s * 0.28, -dir * s * 0.1 + s * 0.15);
             targetCtx.closePath();
             targetCtx.fill();
-            // Abzweig
             targetCtx.beginPath();
             targetCtx.moveTo(-s * 0.12, -dir * s * 0.1);
             targetCtx.lineTo(s * 0.14, dir * s * 0.34);
             targetCtx.stroke();
-            // Spitze Abzweig
             targetCtx.beginPath();
             targetCtx.moveTo(s * 0.2, dir * s * 0.44);
             targetCtx.lineTo(s * 0.02, dir * s * 0.34);
@@ -2123,14 +2335,12 @@
             const lw = Math.max(2, s * 0.075);
             targetCtx.lineWidth = lw;
             const r = s * 0.17;
-            // Hinterrad & Vorderrad (in +X Fahrtrichtung)
             targetCtx.beginPath();
             targetCtx.arc(-s * 0.28, s * 0.14, r, 0, Math.PI * 2);
             targetCtx.stroke();
             targetCtx.beginPath();
             targetCtx.arc(s * 0.28, s * 0.14, r, 0, Math.PI * 2);
             targetCtx.stroke();
-            // Rahmen & Lenker
             targetCtx.beginPath();
             targetCtx.moveTo(-s * 0.28, s * 0.14);
             targetCtx.lineTo(-s * 0.05, -s * 0.14);
@@ -2177,7 +2387,6 @@
             const t = st / steps;
             const t2 = t * t;
             const t3 = t2 * t;
-            // Catmull-Rom Spline für weichen Bordsteinverlauf
             const x = 0.5 * (
               (2 * p1.x) +
               (-p0.x + p2.x) * t +
@@ -2368,7 +2577,6 @@
         const rad = (angleDeg * Math.PI) / 180;
         const fx = Math.cos(rad);
         const fy = Math.sin(rad);
-        // Links = +90° in Maßkoordinaten (X vorwärts, +Y links)
         const lx = -fy;
         const ly = fx;
         const halfWb = (vType.wheelbase || vType.length * 0.6) / 2;
@@ -2443,7 +2651,6 @@
         const statusBar = document.getElementById('status-bar');
         const emptyOverlay = document.getElementById('empty-state-overlay');
 
-        // Startbildschirm vs. vollständige Arbeitsoberfläche
         if (state.hasBackground) {
           if (header) { header.classList.remove('hidden'); header.classList.add('flex'); }
           if (leftSidebar) { leftSidebar.classList.remove('hidden'); leftSidebar.classList.add('flex'); }
@@ -2497,7 +2704,6 @@
           }
         }
 
-        // Header-Tabs aktualisieren
         document.querySelectorAll('.header-tab').forEach(btn => {
           const tab = btn.dataset.tab;
           let unlocked = true;
@@ -2741,7 +2947,6 @@
             state.vehicleInputMode = vType.wheelMode || '4w';
             updateVehicleInputVisibility();
 
-            // Standardbezeichnung & Farbe für neues Objekt aktualisieren
             if (!state.selectedId || state.selectedKind !== 'vehicle') {
               const count = state.vehicles.filter(v => v.typeId === vType.id).length + 1;
               document.getElementById('veh-label').value = `${vType.defaultLabel} ${String(count).padStart(2, '0')}`;
@@ -3132,29 +3337,25 @@
         }
         ctx.restore();
       }
+
       function renderSceneToContext(c, isExport = false, customBgCanvas = null) {
-        // 1. Luftbild / KI-bereinigte Fahrbahnkarte (ohne Hintergrundraster)
         const bgToDraw = customBgCanvas || state.bgProcessedCanvas;
         if (bgToDraw) {
           c.drawImage(bgToDraw, 0, 0, state.bgWidth, state.bgHeight);
         }
 
-        // 2. X- und Y-Achsen (+X, -X, +Y, -Y) – dezent und unaufdringlich
         if (state.hasBaseline && state.measure.showBaseline) {
           drawOrthogonalAxes(c);
         }
 
-        // 3. Temporäre Vorschau beim Festlegen der X-Achse
         if (state.activeTool === 'baseline' && state.tempBaseline) {
           drawTempBaselinePreview(c);
         }
 
-        // 4. Spuren (Bremsspuren, Schleuderspuren, Kratzspuren etc.)
         state.traces.forEach(tr => {
           drawTrace(c, tr, tr.id === state.selectedId && state.selectedKind === 'trace' && !isExport);
         });
 
-        // Aktive Freizeichnungsvorschau
         if (state.activeTool === 'freehand' && state.freehandPoints.length > 1) {
           const tType = TRACE_TYPES.find(t => t.id === state.selectedTraceType) || TRACE_TYPES[0];
           const trWidth = parseFloat(document.getElementById('trace-width')?.value) || tType.width;
@@ -3167,12 +3368,10 @@
           }, false);
         }
 
-        // 5. Fahrzeuge & Verkehrsteilnehmer inkl. rechtwinkliger Lote auf die X-Achse
         state.vehicles.forEach(v => {
           drawVehicle(c, v, v.id === state.selectedId && state.selectedKind === 'vehicle' && !isExport);
         });
 
-        // 6. Live-Vorschau für Vordefinierte Markierungen & Lasso
         if (!isExport && state.activeTool === 'retouch') {
           if (state.retouchTool === 'lasso' && state.lassoPoints.length > 1) {
             c.save();
@@ -3195,7 +3394,6 @@
             } else if (p.mode === 'stamp') {
               drawPredefinedMarking(c, p.id, state.presetColor, state.presetSize, state.hoverImgPt, null, state.presetAngleDeg);
             } else {
-              // Fadenkreuz-Vorschau am Mauszeiger vor dem Ziehen
               c.strokeStyle = '#38bdf8';
               c.lineWidth = 1.5;
               c.beginPath();
@@ -3206,7 +3404,6 @@
           }
         }
 
-        // 7. Dezenter Nordpfeil oben rechts
         if (state.measure.showMeta) {
           drawNorthArrow(c);
         }
@@ -3219,7 +3416,6 @@
 
         c.save();
 
-        // Hilfsfunktion für dezente kontraststarke Linien
         const strokeDualLine = (drawPathFn, mainColor, width, dash = []) => {
           c.save();
           c.setLineDash(dash);
@@ -3241,20 +3437,17 @@
           const p1 = samples[1];
           const ang0 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
 
-          // Negativer Ast (-X) rückwärts vom Bezugspunkt
           strokeDualLine(() => {
             c.beginPath();
             c.moveTo(p0.x, p0.y);
             c.lineTo(p0.x - Math.cos(ang0) * spanPx * 0.5, p0.y - Math.sin(ang0) * spanPx * 0.5);
           }, 'rgba(15, 118, 110, 0.52)', 1.5, [6, 5]);
 
-          // Positiver gekrümmter Ast (+X) entlang des Bordsteins
           strokeDualLine(() => {
             c.beginPath();
             samples.forEach((pt, idx) => (idx === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y)));
           }, 'rgba(15, 118, 110, 0.78)', 2.0, []);
 
-          // Y-Achse (+Y und -Y) senkrecht im Bezugspunkt (0,0)
           const nx = -Math.sin(ang0) * m.yDir;
           const ny = Math.cos(ang0) * m.yDir;
           strokeDualLine(() => {
@@ -3268,7 +3461,6 @@
             c.lineTo(p0.x - nx * spanPx * 0.5, p0.y - ny * spanPx * 0.5);
           }, 'rgba(30, 64, 175, 0.45)', 1.4, [6, 5]);
 
-          // Stützpunkte zum Ziehen auf der gekrümmten Bordstein-Achse
           m.curvePoints.forEach((cp, idx) => {
             c.fillStyle = idx === 0 ? '#0f766e' : '#ffffff';
             c.strokeStyle = '#0f766e';
@@ -3284,35 +3476,30 @@
           const nx = -sin * m.yDir;
           const ny = cos * m.yDir;
 
-          // +X Achse (durchgezogen, dezent Petrol/Teal)
           strokeDualLine(() => {
             c.beginPath();
             c.moveTo(m.originX, m.originY);
             c.lineTo(m.originX + cos * spanPx, m.originY + sin * spanPx);
           }, 'rgba(15, 118, 110, 0.78)', 1.9, []);
 
-          // -X Achse (gestrichelt, dezent)
           strokeDualLine(() => {
             c.beginPath();
             c.moveTo(m.originX, m.originY);
             c.lineTo(m.originX - cos * spanPx, m.originY - sin * spanPx);
           }, 'rgba(15, 118, 110, 0.50)', 1.5, [6, 5]);
 
-          // +Y Achse (durchgezogen, dezent Schieferblau)
           strokeDualLine(() => {
             c.beginPath();
             c.moveTo(m.originX, m.originY);
             c.lineTo(m.originX + nx * spanPx, m.originY + ny * spanPx);
           }, 'rgba(30, 64, 175, 0.68)', 1.6, []);
 
-          // -Y Achse (gestrichelt, dezent)
           strokeDualLine(() => {
             c.beginPath();
             c.moveTo(m.originX, m.originY);
             c.lineTo(m.originX - nx * spanPx, m.originY - ny * spanPx);
           }, 'rgba(30, 64, 175, 0.45)', 1.4, [6, 5]);
 
-          // Dezente 5-Meter-Skalenstriche entlang +X / -X sowie +Y / -Y
           const maxMeters = Math.min(80, Math.ceil(spanPx / ppm));
           c.font = '600 10px Inter, sans-serif';
           c.textAlign = 'center';
@@ -3347,7 +3534,6 @@
             }
           }
 
-          // Richtungslabels +X, -X, +Y, -Y am sichtbaren Rand
           const clampLabelPt = (bx, by, ux, uy, maxD) => {
             let best = 48;
             for (let step = 48; step <= maxD; step += 12) {
@@ -3370,7 +3556,6 @@
           drawPillLabel(c, '−Y', pMinusY.x, pMinusY.y, 'rgba(30, 64, 175, 0.62)');
         }
 
-        // Bezugspunkt (0,0) Markierung
         c.fillStyle = '#ffffff';
         c.strokeStyle = '#0f766e';
         c.lineWidth = 2.2;
@@ -3518,7 +3703,6 @@
         const centerW = measureToWorld(v.x, v.y);
         const worldRad = measureAngleToWorldRad(v.angle || 0);
 
-        // Rechtwinklige Maßlinien (Lote) zur X-Achse
         if (state.hasBaseline && state.measure.showDims) {
           const footW = measureToWorld(v.x, 0);
           c.save();
@@ -3530,7 +3714,6 @@
           c.lineTo(footW.x, footW.y);
           c.stroke();
 
-          // Rechter Winkel am Fußpunkt
           c.setLineDash([]);
           c.fillStyle = '#2563eb';
           c.beginPath();
@@ -3598,7 +3781,6 @@
           c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
           c.fill();
           c.stroke();
-          // Blickrichtungspfeil
           c.strokeStyle = '#1e293b';
           c.lineWidth = 2;
           c.beginPath();
@@ -3606,7 +3788,6 @@
           c.lineTo(rx + 10, 0);
           c.stroke();
         } else {
-          // Fahrzeug-Draufsicht (+X im lokalen System = Fahrtrichtung / Front)
           c.fillStyle = v.color || '#2563eb';
           c.strokeStyle = '#ffffff';
           c.lineWidth = 1.6;
@@ -3615,7 +3796,6 @@
           c.fill();
           c.stroke();
 
-          // Windschutzscheibe & Heckscheibe zur eindeutigen Erkennung der Fahrtrichtung
           c.fillStyle = 'rgba(224, 242, 254, 0.85)';
           c.beginPath();
           c.roundRect(lenPx * 0.12, -widPx * 0.36, lenPx * 0.2, widPx * 0.72, 3);
@@ -3628,7 +3808,6 @@
             c.fill();
           }
 
-          // Scheinwerfer-Indikator vorne
           c.fillStyle = '#fef08a';
           c.fillRect(lenPx / 2 - 2.5, -widPx * 0.36, 2.5, widPx * 0.18);
           c.fillRect(lenPx / 2 - 2.5, widPx * 0.18, 2.5, widPx * 0.18);
@@ -3636,7 +3815,6 @@
 
         c.restore();
 
-        // Radaufstandspunkte einzeichnen (falls vorhanden)
         if (v.wheels) {
           ['vl', 'vr', 'hl', 'hr'].forEach(key => {
             const wp = measureToWorld(v.wheels[key].x, v.wheels[key].y);
@@ -3652,7 +3830,6 @@
           });
         }
 
-        // Fahrzeug-Label über dem Objekt
         drawPillLabel(c, v.label, centerW.x, centerW.y - Math.max(18, widPx * 0.65 + 10), 'rgba(15, 23, 42, 0.88)');
       }
 
@@ -3668,7 +3845,6 @@
         c.fill();
         c.stroke();
 
-        // Pfeil nach Norden (oben)
         c.fillStyle = '#ef4444';
         c.beginPath();
         c.moveTo(x, y - 12);
@@ -3718,7 +3894,6 @@
           );
         }
 
-        // Standard: Google Maps (Satellit HD)
         return L.tileLayer(
           'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
           {
@@ -3929,7 +4104,6 @@
               img.onerror = () => {
                 clearTimeout(timer);
                 if (isGoogle) {
-                  // Google Maps Kachel ohne CORS-Header laden, damit die volle HD-Schärfe erhalten bleibt
                   const directImg = new Image();
                   const directTimer = setTimeout(() => resolve(false), 4500);
                   directImg.onload = () => {
@@ -3951,7 +4125,6 @@
                   return;
                 }
 
-                // Sub-Kachel-Fallback für CORS-Kacheln bei fehlender Zoom-19-Stufe
                 const fbZoom = Math.min(18, nativeZoom);
                 const zDiff = nativeZoom - fbZoom;
                 const div = Math.pow(2, zDiff);
@@ -4069,7 +4242,6 @@
           mode: isOsm ? 'osm' : 'google_sat'
         });
 
-        // Exakte Pixel-pro-Meter-Berechnung aus Breitengrad & Zoomstufe
         const metersPerPixel = (156543.03392 * Math.cos((center.lat * Math.PI) / 180)) / Math.pow(2, zoom);
         const ppm = (1 / Math.max(0.01, metersPerPixel)) * dpr;
 
@@ -4077,7 +4249,6 @@
         closeLiveMapOverlay();
         setBackgroundFromCanvas(outCanvas, tainted, ppm);
 
-        // Falls Google-Kacheln ohne CORS geladen wurden, im Hintergrund still die CORS-Ebene für KI/Pipette vorbereiten
         if (tainted) {
           ensureCorsMapTwinCanvas().catch(() => {});
         }
@@ -4184,7 +4355,6 @@
         const imgPt = screenToImage(sx, sy);
         state.hoverImgPt = imgPt;
 
-        // 1. Ansicht verschieben (Pan-Werkzeug, Leertaste oder mittlere Maustaste)
         if (state.activeTool === 'pan' || spacePressed || e.button === 1) {
           dragState = {
             type: 'pan',
@@ -4196,7 +4366,6 @@
           return;
         }
 
-        // 2. Bezugspunkt (0,0) & X-Achse setzen
         if (state.activeTool === 'baseline') {
           if (state.baselineDrawMode === 'straight') {
             if (!state.tempBaseline) {
@@ -4218,7 +4387,6 @@
           return;
         }
 
-        // 3. Händische Markierungs-Korrektur & vordefinierte Markierungen
         if (state.activeTool === 'retouch' && state.retouchTool) {
           if (state.retouchTool === 'pipette') {
             pickColorFromCanvasAt(imgPt.x, imgPt.y);
@@ -4253,7 +4421,6 @@
           }
         }
 
-        // 4. Freihand-Spur zeichnen
         if (state.activeTool === 'freehand') {
           if (!state.hasBaseline) {
             showToast('Bitte legen Sie zuerst die X-Achse fest.', 'warning');
@@ -4266,7 +4433,6 @@
           return;
         }
 
-        // 5. Auswahl-Modus: Stützpunkt einer gekrümmten X-Achse oder Fahrzeug anklicken
         const curveIdx = hitTestCurveHandle(imgPt);
         if (curveIdx !== -1) {
           pushHistory();
@@ -4281,7 +4447,6 @@
           return;
         }
 
-        // Klick auf leere Fläche: Auswahl aufheben & optional Ansicht verschieben
         selectObject(null, null);
         dragState = {
           type: 'pan',
@@ -4298,7 +4463,6 @@
         const imgPt = screenToImage(sx, sy);
         state.hoverImgPt = imgPt;
 
-        // Live-Koordinaten in der Statusleiste aktualisieren
         const statusX = document.getElementById('status-x');
         const statusY = document.getElementById('status-y');
         if (state.hasBaseline && statusX && statusY) {
@@ -4480,16 +4644,13 @@
          13. EVENT-LISTENER & INITIALISIERUNG
          ============================================================================ */
       function bindEvents() {
-        // Datum initialisieren
         const dateInp = document.getElementById('input-case-date');
         if (dateInp) dateInp.value = state.meta.date;
 
-        // Tabs im Header
         document.querySelectorAll('.header-tab').forEach(btn => {
           btn.addEventListener('click', () => switchTab(btn.dataset.tab));
         });
 
-        // Schritt-Weiter-Buttons
         document.getElementById('btn-goto-step2')?.addEventListener('click', () => {
           switchTab('measure');
           state.activeTool = 'baseline';
@@ -4500,7 +4661,6 @@
         document.getElementById('btn-goto-step3')?.addEventListener('click', () => switchTab('vehicles'));
         document.getElementById('btn-goto-step4')?.addEventListener('click', () => switchTab('traces'));
 
-        // Startbildschirm: Ort & Straße suchen / Freie Karte / Bild laden
         document.getElementById('btn-empty-search')?.addEventListener('click', () => {
           searchAddressAndFly(
             document.getElementById('empty-search-city')?.value,
@@ -4522,7 +4682,6 @@
           document.getElementById('input-bg-upload')?.click();
         });
 
-        // Linke Leiste Schritt 1: Ort & Straße suchen / Karte öffnen / Übernehmen
         document.getElementById('btn-search-address')?.addEventListener('click', () => {
           searchAddressAndFly(
             document.getElementById('input-search-city')?.value,
@@ -4548,7 +4707,6 @@
           setAerialProvider(e.target.value);
         });
 
-        // Live-Karten Overlay Steuerung
         document.getElementById('btn-overlay-search')?.addEventListener('click', () => {
           searchAddressAndFly(
             document.getElementById('overlay-search-city')?.value,
@@ -4568,7 +4726,6 @@
         document.getElementById('btn-overlay-capture')?.addEventListener('click', captureLeafletMap);
         document.getElementById('btn-overlay-close')?.addEventListener('click', closeLiveMapOverlay);
 
-        // Eigenes Bild hochladen / Strg+V einfügen
         document.getElementById('input-bg-upload')?.addEventListener('change', (e) => {
           if (e.target.files && e.target.files[0]) {
             handleUploadedImageFile(e.target.files[0]);
@@ -4588,6 +4745,30 @@
         });
 
         // KI-Bereinigung & 1:1 Überblendung
+        const syncApiKeyStatus = () => {
+          const saved = (localStorage.getItem('unfallskizze_gemini_api_key') || GEMINI_API_KEY || '').trim();
+          const inp = document.getElementById('input-gemini-apikey');
+          const st = document.getElementById('ai-apikey-status');
+          if (inp && saved && !inp.value) inp.value = saved;
+          if (st) {
+            st.textContent = saved ? 'Gespeichert ✓' : 'Standard';
+            st.className = saved ? 'text-[10px] font-mono text-emerald-700 font-bold' : 'text-[10px] font-mono text-indigo-600';
+          }
+        };
+        syncApiKeyStatus();
+
+        document.getElementById('btn-save-apikey')?.addEventListener('click', () => {
+          const val = (document.getElementById('input-gemini-apikey')?.value || '').trim();
+          if (val) {
+            localStorage.setItem('unfallskizze_gemini_api_key', val);
+            showToast('Google AI Studio API-Key gespeichert.', 'success');
+          } else {
+            localStorage.removeItem('unfallskizze_gemini_api_key');
+            showToast('Eigener API-Key entfernt.', 'info');
+          }
+          syncApiKeyStatus();
+        });
+
         document.getElementById('btn-ai-clean')?.addEventListener('click', runAiRoadCleanup);
         document.getElementById('rng-ai-blend')?.addEventListener('input', (e) => {
           state.aiBlend = (parseInt(e.target.value, 10) || 0) / 100;
@@ -4906,7 +5087,6 @@
         canvas.addEventListener('wheel', (e) => {
           if (!state.hasBackground) return;
           e.preventDefault();
-          // Umschalt + Mausrad dreht Stempel-Markierung
           if (e.shiftKey && state.activeTool === 'retouch' && state.retouchTool === 'preset_marking') {
             const step = e.deltaY < 0 ? 15 : -15;
             setPresetAngle(state.presetAngleDeg + step);
@@ -4923,7 +5103,6 @@
           renderCanvas();
         }, { passive: false });
 
-        // Maus- & Touch-Events auf Canvas
         canvas.addEventListener('mousedown', onPointerDown);
         window.addEventListener('mousemove', onPointerMove);
         window.addEventListener('mouseup', onPointerUp);
@@ -4931,7 +5110,6 @@
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); onPointerMove(e); }, { passive: false });
         canvas.addEventListener('touchend', onPointerUp);
 
-        // Header-Aktionen: Undo, PNG, Protokoll, rechte Leiste mobil
         document.getElementById('btn-undo')?.addEventListener('click', undo);
         document.getElementById('btn-export-png')?.addEventListener('click', downloadPng);
         document.getElementById('btn-protocol')?.addEventListener('click', openProtocolModal);
@@ -4944,7 +5122,6 @@
           if (rs) rs.classList.toggle('translate-x-full');
         });
 
-        // Alle Objekte leeren (2-Klick-Bestätigung ohne confirm())
         document.getElementById('btn-clear-all')?.addEventListener('click', (e) => {
           const btn = e.currentTarget;
           if (btn.dataset.armed !== '1') {
@@ -4970,7 +5147,6 @@
           showToast('Alle Fahrzeuge und Spuren geleert.', 'info');
         });
 
-        // Projekt speichern / laden (.json)
         document.getElementById('btn-save-json')?.addEventListener('click', async () => {
           if (!state.hasBackground) return;
           const cleanBg = await getCleanExportBaseCanvas();
@@ -5046,7 +5222,6 @@
           e.target.value = '';
         });
 
-        // Tastaturkürzel
         window.addEventListener('keydown', (e) => {
           if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
           if (e.code === 'Space') {
