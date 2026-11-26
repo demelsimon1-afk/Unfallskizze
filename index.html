@@ -1717,7 +1717,7 @@
                     ]
                   }],
                   generationConfig: {
-                    responseModalities: ['IMAGE'],
+                    responseModalities: ['TEXT', 'IMAGE'],
                     imageConfig: { aspectRatio: targetAspect }
                   }
                 })
@@ -1844,16 +1844,19 @@
 
           const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
           const hasAnyKey = Boolean(storedKey || (GEMINI_API_KEY || '').trim());
-          if (!hasAnyKey && (err?.status === 400 || err?.status === 403)) {
+          const errMsg = String(err?.message || '');
+          if (errMsg.includes('MISSING_KEY')) {
+            showToast('Vercel: GEMINI_API_KEY fehlt im aktuellen Deployment – bitte in Vercel unter Deployments → Redeploy klicken.', 'warning');
+          } else if (!hasAnyKey && (err?.status === 400 || err?.status === 403)) {
             const keyDetails = document.getElementById('ai-apikey-details');
             const keyInput = document.getElementById('input-gemini-apikey');
             if (keyDetails) keyDetails.open = true;
             if (keyInput) keyInput.focus();
-            showToast('Auf Vercel bitte unter „API-Key für Vercel“ deinen kostenlosen Key eintragen.', 'warning');
+            showToast(`API-Key prüfen (${errMsg || 'HTTP ' + err.status}).`, 'warning');
           } else if (err?.status === 503 || err?.status === 429) {
             showToast('Google-KI gerade ausgelastet (503/429) – bitte kurz warten und erneut klicken.', 'warning');
           } else {
-            showToast('KI-Dienst derzeit nicht erreichbar – Original-Luftbild bleibt erhalten.', 'warning');
+            showToast(`KI-Fehler (${errMsg || 'Netzwerk'}) – Original-Luftbild bleibt erhalten.`, 'warning');
           }
         } finally {
           state.aiBusy = false;
