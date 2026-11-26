@@ -33,108 +33,223 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Missing imageBase64' });
     }
 
-    // Verfügbare bildfähige Gemini-Modelle über die Models-API ermitteln (Imagen-Endpunkte ausschließen)
-    const discoveredModels = [];
-    try {
-      const listRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
-        {
-          method: 'GET',
-          headers: { 'x-goog-api-key': key }
-        }
-      );
-
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const available = Array.isArray(listData?.models) ? listData.models : [];
-
-        for (const m of available) {
-          const name = (m.name || '').replace(/^models\//, '');
-          const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
-          if (methods.includes('generateContent') && /image/i.test(name) && !/imagen/i.test(name)) {
-            discoveredModels.push(name);
-          }
-        }
-      }
-    } catch (_) {
-      // Bei Fehler beim Abruf der Modellliste direkt mit den Standard-Modellen fortfahren
-    }
-
-    // Hochwertige Gemini-3-Pro- & 3.1-Flash-Bildmodelle je nach gewählter Qualitätsstufe priorisieren
-    const tierPresets = {
-      pro: [
-        'gemini-3-pro-image-preview',
-        'gemini-3-pro-image',
-        'gemini-3.1-flash-image-preview',
-        'gemini-3.1-flash-image',
-        'gemini-2.5-flash-image'
-      ],
-      flash3: [
-        'gemini-3.1-flash-image-preview',
-        'gemini-3.1-flash-image',
-        'gemini-3-pro-image-preview',
-        'gemini-3-pro-image',
-        'gemini-2.5-flash-image'
-      ],
-      flash25: [
-        'gemini-2.5-flash-image',
-        'gemini-3.1-flash-image-preview',
-        'gemini-3-pro-image-preview'
-      ]
-    };
-
-    const selectedPreset = tierPresets[modelTier] || tierPresets.pro;
-    const candidateModels = Array.from(new Set([
-      ...selectedPreset,
-      ...discoveredModels
-    ].filter(Boolean)));
-
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const isFreeMode = !modelTier || modelTier === 'free';
     let lastStatus = 502;
     let lastData = { error: 'Kein bildfähiges Gemini-Modell verfügbar' };
-    let sawFreeTierLimitZero = false;
+    let sawFreeTierLimitZero = isFreeMode;
 
-    for (const modelName of candidateModels) {
-      const isGemini3 = /gemini-3/i.test(modelName);
-      const supportsImageConfig = /gemini-2\.5|gemini-3/i.test(modelName);
-      const requestedSize = (typeof imageSize === 'string' && imageSize.trim()) ? imageSize.trim() : '2K';
+    // Bezahlte Bildgenerierungs-Modelle nur abfragen, wenn nicht ausdrücklich "free" gewählt wurde
+    if (!isFreeMode) {
+      // Verfügbare bildfähige Gemini-Modelle über die Models-API ermitteln (Imagen-Endpunkte ausschließen)
+      const discoveredModels = [];
+      try {
+        const listRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+          {
+            method: 'GET',
+            headers: { 'x-goog-api-key': key }
+          }
+        );
 
-      // Bei Gemini 3 zuerst mit 2K-Auflösung versuchen; falls ein Endpunkt 400 meldet, ohne imageSize wiederholen
-      const configVariants = [];
-      if (isGemini3 && typeof aspectRatio === 'string' && aspectRatio.trim()) {
-        configVariants.push({
-          responseModalities: ['TEXT', 'IMAGE'],
-          temperature: 0.1,
-          imageConfig: { aspectRatio: aspectRatio.trim(), imageSize: requestedSize }
-        });
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const available = Array.isArray(listData?.models) ? listData.models : [];
+
+          for (const m of available) {
+            const name = (m.name || '').replace(/^models\//, '');
+            const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+            if (methods.includes('generateContent') && /image/i.test(name) && !/imagen/i.test(name)) {
+              discoveredModels.push(name);
+            }
+          }
+        }
+      } catch (_) {
+        // Bei Fehler beim Abruf der Modellliste direkt mit den Standard-Modellen fortfahren
       }
-      if (supportsImageConfig && typeof aspectRatio === 'string' && aspectRatio.trim()) {
-        configVariants.push({
-          responseModalities: ['TEXT', 'IMAGE'],
-          temperature: 0.1,
-          imageConfig: { aspectRatio: aspectRatio.trim() }
-        });
-      } else {
-        configVariants.push({
-          responseModalities: ['TEXT', 'IMAGE'],
-          temperature: 0.1
-        });
+
+      // Hochwertige Gemini-3-Pro- & 3.1-Flash-Bildmodelle je nach gewählter Qualitätsstufe priorisieren
+      const tierPresets = {
+        pro: [
+          'gemini-3-pro-image-preview',
+          'gemini-3-pro-image',
+          'gemini-3.1-flash-image-preview',
+          'gemini-3.1-flash-image',
+          'gemini-2.5-flash-image'
+        ],
+        flash3: [
+          'gemini-3.1-flash-image-preview',
+          'gemini-3.1-flash-image',
+          'gemini-3-pro-image-preview',
+          'gemini-3-pro-image',
+          'gemini-2.5-flash-image'
+        ],
+        flash25: [
+          'gemini-2.5-flash-image',
+          'gemini-3.1-flash-image-preview',
+          'gemini-3-pro-image-preview'
+        ]
+      };
+
+      const selectedPreset = tierPresets[modelTier] || tierPresets.pro;
+      const candidateModels = Array.from(new Set([
+        ...selectedPreset,
+        ...discoveredModels
+      ].filter(Boolean)));
+
+      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+      for (const modelName of candidateModels) {
+        const isGemini3 = /gemini-3/i.test(modelName);
+        const supportsImageConfig = /gemini-2\.5|gemini-3/i.test(modelName);
+        const requestedSize = (typeof imageSize === 'string' && imageSize.trim()) ? imageSize.trim() : '2K';
+
+        const configVariants = [];
+        if (isGemini3 && typeof aspectRatio === 'string' && aspectRatio.trim()) {
+          configVariants.push({
+            responseModalities: ['TEXT', 'IMAGE'],
+            temperature: 0.1,
+            imageConfig: { aspectRatio: aspectRatio.trim(), imageSize: requestedSize }
+          });
+        }
+        if (supportsImageConfig && typeof aspectRatio === 'string' && aspectRatio.trim()) {
+          configVariants.push({
+            responseModalities: ['TEXT', 'IMAGE'],
+            temperature: 0.1,
+            imageConfig: { aspectRatio: aspectRatio.trim() }
+          });
+        } else {
+          configVariants.push({
+            responseModalities: ['TEXT', 'IMAGE'],
+            temperature: 0.1
+          });
+        }
+
+        for (const generationConfig of configVariants) {
+          let moveNextModel = false;
+
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 45000);
+
+            try {
+              const r = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(key)}`,
+                {
+                  method: 'POST',
+                  signal: ctrl.signal,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': key
+                  },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [
+                        {
+                          text:
+                            prompt ||
+                            'Edit this aerial road photo at 1:1 alignment: remove vehicles, shadows, and outside vegetation while keeping existing roads and markings unchanged.'
+                        },
+                        {
+                          inlineData: {
+                            mimeType: mimeType || 'image/jpeg',
+                            data: imageBase64
+                          }
+                        }
+                      ]
+                    }],
+                    generationConfig
+                  })
+                }
+              );
+
+              clearTimeout(timer);
+              const data = await r.json().catch(() => ({}));
+              lastStatus = r.status;
+              lastData = data;
+
+              if (r.ok) {
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                const hasImage = parts.some(p => p.inlineData && p.inlineData.data);
+                if (hasImage) {
+                  return res.status(200).json({ ...data, usedModel: modelName });
+                }
+                lastStatus = 502;
+                lastData = { error: `Modell ${modelName} lieferte kein Bild zurück` };
+                moveNextModel = true;
+                break;
+              }
+
+              if (r.status === 401 || r.status === 403) {
+                return res.status(r.status).json(data);
+              }
+
+              const errText = JSON.stringify(data || {});
+              if (r.status === 429 && (/limit:\s*0/i.test(errText) || /free_tier/i.test(errText))) {
+                sawFreeTierLimitZero = true;
+                moveNextModel = true;
+                break;
+              }
+
+              if (r.status === 429 || r.status === 503) {
+                if (attempt === 0) {
+                  await sleep(900);
+                  continue;
+                }
+                moveNextModel = true;
+                break;
+              }
+
+              if (r.status === 400) {
+                break;
+              }
+
+              moveNextModel = true;
+              break;
+            } catch (err) {
+              clearTimeout(timer);
+              lastStatus = err?.name === 'AbortError' ? 504 : 500;
+              lastData = {
+                error: err?.name === 'AbortError'
+                  ? `Timeout (${modelName})`
+                  : (err?.message || 'Netzwerkfehler')
+              };
+              if (attempt === 0) {
+                await sleep(700);
+                continue;
+              }
+              moveNextModel = true;
+              break;
+            }
+          }
+
+          if (moveNextModel) break;
+        }
+
+        if (sawFreeTierLimitZero) break;
       }
+    }
 
-      for (const generationConfig of configVariants) {
-        let moveNextModel = false;
+    // 100 % kostenloser Free-Tier-Modus (ohne Guthaben / ohne Abrechnungskonto):
+    // Nutzt kostenlose Flash-Vision-Modelle mit deaktiviertem Thinking-Budget für schnelle, präzise Objekterkennung.
+    if (sawFreeTierLimitZero) {
+      const visionModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+      let lastVisionError = '';
 
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const ctrl = new AbortController();
-          // 45 Sekunden Timeout für hochwertige 2K-Generierung mit Gemini 3 Pro Image
-          const timer = setTimeout(() => ctrl.abort(), 45000);
+      for (const vModel of visionModels) {
+        const genConfigs = [
+          { temperature: 0.1, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+          { temperature: 0.1, responseMimeType: 'application/json' }
+        ];
 
+        for (const genCfg of genConfigs) {
+          const vCtrl = new AbortController();
+          const vTimer = setTimeout(() => vCtrl.abort(), 24000);
           try {
-            const r = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(key)}`,
+            const vRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(key)}`,
               {
                 method: 'POST',
-                signal: ctrl.signal,
+                signal: vCtrl.signal,
                 headers: {
                   'Content-Type': 'application/json',
                   'x-goog-api-key': key
@@ -143,9 +258,13 @@ module.exports = async function handler(req, res) {
                   contents: [{
                     parts: [
                       {
-                        text:
-                          prompt ||
-                          'Edit this aerial road photo at 1:1 alignment: remove vehicles, shadows, and outside vegetation while keeping existing roads and markings unchanged.'
+                        text: [
+                          'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
+                          'Return ONLY a valid JSON object with two keys:',
+                          '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
+                          '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
+                          'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
+                        ].join(' ')
                       },
                       {
                         inlineData: {
@@ -155,164 +274,52 @@ module.exports = async function handler(req, res) {
                       }
                     ]
                   }],
-                  generationConfig
+                  generationConfig: genCfg
                 })
               }
             );
+            clearTimeout(vTimer);
 
-            clearTimeout(timer);
-            const data = await r.json().catch(() => ({}));
-            lastStatus = r.status;
-            lastData = data;
-
-            if (r.ok) {
-              const parts = data?.candidates?.[0]?.content?.parts || [];
-              const hasImage = parts.some(p => p.inlineData && p.inlineData.data);
-              if (hasImage) {
-                return res.status(200).json({ ...data, usedModel: modelName });
+            if (vRes.ok) {
+              const vData = await vRes.json().catch(() => ({}));
+              const parts = vData?.candidates?.[0]?.content?.parts || [];
+              const rawText = parts
+                .filter(p => !p.thought && typeof p.text === 'string')
+                .map(p => p.text)
+                .join('\n')
+                .trim();
+              const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+              if (!jsonMatch) {
+                lastVisionError = `${vModel}: Keine JSON-Antwort`;
+                break;
               }
-              lastStatus = 502;
-              lastData = { error: `Modell ${modelName} lieferte kein Bild zurück` };
-              moveNextModel = true;
-              break;
-            }
-
-            // Bei ungültigem API-Key sofort abbrechen
-            if (r.status === 401 || r.status === 403) {
-              return res.status(r.status).json(data);
-            }
-
-            // Nur wenn der Key ausdrücklich kein Bild-Kontingent hat (limit: 0), auf Free-Tier-Fallback wechseln
-            const errText = JSON.stringify(data || {});
-            if (r.status === 429 && (/limit:\s*0/i.test(errText) || /free_tier/i.test(errText))) {
-              sawFreeTierLimitZero = true;
-              moveNextModel = true;
-              break;
-            }
-
-            // Bei vorübergehender Überlastung einmal kurz warten, sonst nächstes Modell probieren
-            if (r.status === 429 || r.status === 503) {
-              if (attempt === 0) {
-                await sleep(900);
-                continue;
-              }
-              moveNextModel = true;
-              break;
-            }
-
-            // Bei 400 (z. B. imageSize-Parameter nicht unterstützt) nächste Config-Variante testen
-            if (r.status === 400) {
-              break;
-            }
-
-            moveNextModel = true;
-            break;
-          } catch (err) {
-            clearTimeout(timer);
-            lastStatus = err?.name === 'AbortError' ? 504 : 500;
-            lastData = {
-              error: err?.name === 'AbortError'
-                ? `Timeout (${modelName})`
-                : (err?.message || 'Netzwerkfehler')
-            };
-            if (attempt === 0) {
-              await sleep(700);
-              continue;
-            }
-            moveNextModel = true;
-            break;
-          }
-        }
-
-        if (moveNextModel) break;
-      }
-
-      if (sawFreeTierLimitZero) break;
-    }
-
-    // Fallback, wenn der Google AI Studio Key auf "Free Tier" (limit: 0 für Bildmodelle) steht:
-    // Nutzt kostenlose Flash-Vision-Modelle ohne Thinking-Overhead und extrahiert das JSON zuverlässig.
-    if (sawFreeTierLimitZero) {
-      const visionModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
-      let lastVisionError = '';
-
-      for (const vModel of visionModels) {
-        const vCtrl = new AbortController();
-        const vTimer = setTimeout(() => vCtrl.abort(), 22000);
-        try {
-          const vRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(key)}`,
-            {
-              method: 'POST',
-              signal: vCtrl.signal,
-              headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': key
-              },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    {
-                      text: [
-                        'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                        'Return ONLY a valid JSON object with two keys:',
-                        '1. "vehicles": array of bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, motorcycle, bicycle) and dark vehicle shadow on the road.',
-                        '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, and green areas OUTSIDE the road curbs.',
-                        'Keep all road surfaces, curbs, bike lanes, and road markings completely outside the vegetation polygons.'
-                      ].join(' ')
-                    },
-                    {
-                      inlineData: {
-                        mimeType: mimeType || 'image/jpeg',
-                        data: imageBase64
-                      }
-                    }
-                  ]
-                }],
-                generationConfig: {
-                  temperature: 0.1,
-                  responseMimeType: 'application/json'
+              const parsed = JSON.parse(jsonMatch[0]);
+              return res.status(200).json({
+                fallbackMode: 'vision_cleanup',
+                model: vModel,
+                detections: {
+                  vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+                  vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
                 }
-              })
-            }
-          );
-          clearTimeout(vTimer);
-
-          if (vRes.ok) {
-            const vData = await vRes.json().catch(() => ({}));
-            const parts = vData?.candidates?.[0]?.content?.parts || [];
-            // Thinking-Parts herausfiltern, damit JSON.parse nicht durch Gedankentext fehlschlägt
-            const rawText = parts
-              .filter(p => !p.thought && typeof p.text === 'string')
-              .map(p => p.text)
-              .join('\n')
-              .trim();
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-              lastVisionError = `${vModel}: Keine JSON-Antwort`;
-              continue;
-            }
-            const parsed = JSON.parse(jsonMatch[0]);
-            return res.status(200).json({
-              fallbackMode: 'vision_cleanup',
-              model: vModel,
-              detections: {
-                vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+              });
+            } else {
+              const vErr = await vRes.json().catch(() => ({}));
+              lastVisionError = vErr?.error?.message || `HTTP ${vRes.status}`;
+              if (vRes.status === 401 || vRes.status === 403) {
+                return res.status(vRes.status).json(vErr);
               }
-            });
-          } else {
-            const vErr = await vRes.json().catch(() => ({}));
-            lastVisionError = vErr?.error?.message || `HTTP ${vRes.status}`;
+              if (vRes.status !== 400) break;
+            }
+          } catch (vEx) {
+            clearTimeout(vTimer);
+            lastVisionError = vEx?.message || 'Vision-Fehler';
+            break;
           }
-        } catch (vEx) {
-          clearTimeout(vTimer);
-          lastVisionError = vEx?.message || 'Vision-Fehler';
         }
       }
 
       return res.status(429).json({
-        error: `Google AI Studio Key steht noch auf Free Tier (Bildmodelle limit: 0). Fallback-Hinweis: ${lastVisionError}`
+        error: `Kostenlose KI-Bereinigung konnte nicht abgeschlossen werden: ${lastVisionError}`
       });
     }
 
