@@ -1,30 +1,23 @@
 module.exports = async function handler(req, res) {
-     if (req.method !== 'POST') {
-       return res.status(405).json({ error: 'Method not allowed' });
-     }
+     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
      const key = process.env.GEMINI_API_KEY;
-     if (!key) {
-       return res.status(500).json({ error: 'MISSING_KEY' });
-     }
+     if (!key) return res.status(500).json({ error: 'MISSING_KEY' });
      try {
        const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-       const { prompt, imageBase64 } = body;
+       const { prompt, imageBase64, mimeType } = body;
        const r = await fetch(
          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`,
          {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
+           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
            body: JSON.stringify({
              contents: [{
                parts: [
                  { text: prompt },
-                 { inlineData: { mimeType: 'image/png', data: imageBase64 } }
+                 { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } }
                ]
              }],
-             generationConfig: {
-               responseMimeType: 'application/json',
-               temperature: 0.1
-             }
+             generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
            })
          }
        );
