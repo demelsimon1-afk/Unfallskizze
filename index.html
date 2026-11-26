@@ -1876,17 +1876,16 @@
             } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
               const errInfo = await proxyRes.json().catch(() => ({}));
               const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
-              const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-              state.bgAiCanvas = buildCleanSharpFallback(fallbackSrc);
-              state.aiActive = true;
-              state.aiBlend = 1.0;
+              state.bgAiCanvas = null;
+              state.aiActive = false;
+              state.aiBlend = 0.0;
               processBackgroundImage();
               if (proxyRes.status === 404) {
                 showToast('Datei api/gemini.js auf Vercel nicht gefunden (404) – Pfad in GitHub prüfen.', 'warning');
               } else if (detail === 'MISSING_KEY') {
                 showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
               } else if (proxyRes.status === 503 || proxyRes.status === 429) {
-                showToast('Google-KI kurzzeitig ausgelastet – scharfes Luftbild beibehalten.', 'info');
+                showToast('Google-KI im Free Tier gerade ausgelastet – bitte in einigen Sekunden erneut versuchen.', 'warning');
               } else {
                 showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
               }
@@ -2011,18 +2010,10 @@
           processBackgroundImage();
           showToast('Scharfes Fahrbahnbild mit erkannten Markierungen erzeugt.', 'success');
         } catch (err) {
-          if (state.bgTainted) {
-            const twin = await ensureCorsMapTwinCanvas();
-            state.bgAiCanvas = buildCleanSharpFallback(twin);
-            state.aiActive = true;
-            state.aiBlend = 1.0;
-            processBackgroundImage();
-          } else {
-            state.bgAiCanvas = buildCleanSharpFallback(state.bgOriginalCanvas);
-            state.aiActive = true;
-            state.aiBlend = 1.0;
-            processBackgroundImage();
-          }
+          state.bgAiCanvas = null;
+          state.aiActive = false;
+          state.aiBlend = 0.0;
+          processBackgroundImage();
 
           const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
           const hasAnyKey = Boolean(storedKey || (GEMINI_API_KEY || '').trim());
@@ -2032,8 +2023,10 @@
             if (keyDetails) keyDetails.open = true;
             if (keyInput) keyInput.focus();
             showToast('Auf Vercel bitte unter „API-Key für Vercel“ deinen kostenlosen Key eintragen.', 'warning');
+          } else if (err?.status === 503 || err?.status === 429) {
+            showToast('Google-KI gerade ausgelastet (503/429) – bitte kurz warten und erneut klicken.', 'warning');
           } else {
-            showToast('Lokale Schärfung angewendet (KI-Dienst derzeit nicht erreichbar).', 'warning');
+            showToast('KI-Dienst derzeit nicht erreichbar – Original-Luftbild bleibt erhalten.', 'warning');
           }
         } finally {
           state.aiBusy = false;
