@@ -2703,6 +2703,7 @@
 
         updateAiUI();
         updateXAxisButtonLabel();
+        resizeCanvas();
       }
 
       function switchTab(tabName) {
@@ -3270,8 +3271,8 @@
       /* ============================================================================
          9. CANVAS-ZEICHNUNG (OHNE HINTERGRUNDRASTER, +/- ACHSEN DEZENT, FAHRZEUGE, SPUREN)
          ============================================================================ */
-      function resizeCanvas() {
-        if (!canvasContainer || !canvas) return;
+      function syncCanvasSize() {
+        if (!canvasContainer || !canvas) return false;
         const rect = canvasContainer.getBoundingClientRect();
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const w = Math.max(100, Math.round(rect.width * dpr));
@@ -3279,12 +3280,19 @@
         if (canvas.width !== w || canvas.height !== h) {
           canvas.width = w;
           canvas.height = h;
+          return true;
         }
+        return false;
+      }
+
+      function resizeCanvas() {
+        syncCanvasSize();
         renderCanvas();
       }
 
       function fitCanvasView() {
         if (!canvasContainer || !state.hasBackground) return;
+        syncCanvasSize();
         const rect = canvasContainer.getBoundingClientRect();
         const pad = 28;
         const availW = Math.max(120, rect.width - pad * 2);
@@ -4290,11 +4298,17 @@
          ============================================================================ */
       function getCanvasPointerPos(e) {
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY;
+        const touch = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+        const clientX = touch ? touch.clientX : e.clientX;
+        const clientY = touch ? touch.clientY : e.clientY;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const logicalW = canvas.width / dpr;
+        const logicalH = canvas.height / dpr;
+        const scaleX = rect.width > 0 ? logicalW / rect.width : 1;
+        const scaleY = rect.height > 0 ? logicalH / rect.height : 1;
         return {
-          sx: clientX - rect.left,
-          sy: clientY - rect.top
+          sx: (clientX - rect.left) * scaleX,
+          sy: (clientY - rect.top) * scaleY
         };
       }
 
@@ -5278,6 +5292,13 @@
         window.addEventListener('keyup', (e) => {
           if (e.code === 'Space') spacePressed = false;
         });
+
+        if (typeof ResizeObserver !== 'undefined' && canvasContainer) {
+          const canvasResizeObserver = new ResizeObserver(() => {
+            resizeCanvas();
+          });
+          canvasResizeObserver.observe(canvasContainer);
+        }
 
         window.addEventListener('resize', resizeCanvas);
       }
