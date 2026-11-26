@@ -1632,7 +1632,12 @@
             proxyRes = await fetch('/api/gemini', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt: strictPrompt, imageBase64: base64Data, mimeType: sendMime })
+              body: JSON.stringify({
+                prompt: strictPrompt,
+                imageBase64: base64Data,
+                mimeType: sendMime,
+                aspectRatio: targetAspect
+              })
             });
           } catch (_) {
             proxyRes = null;
@@ -1769,7 +1774,8 @@
 
         try {
           const sourceForAi = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-          const maxDim = 768;
+          // Bildqualität und Auflösung für schnellere, stabilere KI-Übertragung reduzieren
+          const maxDim = 512;
           const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
           const sendW = Math.max(64, Math.round(state.bgWidth * scale));
           const sendH = Math.max(64, Math.round(state.bgHeight * scale));
@@ -1778,11 +1784,12 @@
           rawScaled.height = sendH;
           const tCtx = rawScaled.getContext('2d');
           tCtx.imageSmoothingEnabled = true;
-          tCtx.imageSmoothingQuality = 'high';
+          tCtx.imageSmoothingQuality = 'medium';
           tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
 
-          const sendMime = 'image/png';
-          const dataUrl = rawScaled.toDataURL(sendMime);
+          const sendMime = 'image/jpeg';
+          const jpegQuality = 0.72;
+          const dataUrl = rawScaled.toDataURL(sendMime, jpegQuality);
           const base64Data = dataUrl.split(',')[1];
           const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
 
