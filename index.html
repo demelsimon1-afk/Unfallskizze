@@ -1711,19 +1711,15 @@
 
       async function runAiRoadCleanup() {
         if (!state.hasBackground || !state.bgOriginalCanvas || state.aiBusy) return;
-        const overlay = document.getElementById('ai-loading-overlay');
+
         state.aiBusy = true;
         updateAiUI();
+        const overlay = document.getElementById('ai-loading-overlay');
         if (overlay) overlay.classList.remove('hidden');
 
         try {
-          // Falls Google-Kacheln vom Browser als CORS-geschützt markiert sind, deckungsgleiche CORS-Ebene nutzen
-          let sourceForAi = state.bgOriginalCanvas;
-          if (state.bgTainted) {
-            sourceForAi = await ensureCorsMapTwinCanvas();
-          }
-
-          const maxDim = 1536;
+          const sourceForAi = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
+          const maxDim = 1280;
           const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
           const sendW = Math.max(64, Math.round(state.bgWidth * scale));
           const sendH = Math.max(64, Math.round(state.bgHeight * scale));
@@ -1736,7 +1732,8 @@
           tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
 
           const tempCanvas = applyCrispUnsharpMask(rawScaled, 0.75);
-          const dataUrl = tempCanvas.toDataURL('image/png');
+          const sendMime = 'image/jpeg';
+          const dataUrl = tempCanvas.toDataURL(sendMime, 0.9);
           const base64Data = dataUrl.split(',')[1];
 
           const freePrompt = [
@@ -1752,31 +1749,42 @@
 
           // 1. Geschützter Vercel-Server-Endpunkt (/api/gemini) – für alle Besucher nutzbar, Key bleibt unsichtbar
           if (!customKey && window.location.protocol.startsWith('http')) {
+            let proxyRes = null;
             try {
-              const proxyRes = await fetch('/api/gemini', {
+              proxyRes = await fetch('/api/gemini', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: freePrompt, imageBase64: base64Data })
+                body: JSON.stringify({ prompt: freePrompt, imageBase64: base64Data, mimeType: sendMime })
               });
-              if (proxyRes.ok) {
-                const proxyData = await proxyRes.json();
-                const rawText = proxyData?.candidates?.[0]?.content?.parts?.[0]?.text || proxyData?.text || '{}';
-                const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-                const plan = JSON.parse(cleanedJson);
-                state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
-                state.aiActive = true;
-                state.aiBlend = 1.0;
-                processBackgroundImage();
-                showToast('Scharfer Fahrbahnverlauf erzeugt.', 'success');
-                return;
-              } else if (proxyRes.status === 500) {
-                const errInfo = await proxyRes.json().catch(() => ({}));
-                if (errInfo?.error === 'MISSING_KEY') {
-                  showToast('Bitte GEMINI_API_KEY in den Vercel Environment Variables hinterlegen.', 'warning');
-                }
-              }
             } catch (_) {
-              // Kein /api/gemini Endpunkt vorhanden -> weiter mit lokalem Key oder Vorschau-Modus
+              proxyRes = null;
+            }
+
+            if (proxyRes && proxyRes.ok) {
+              const proxyData = await proxyRes.json();
+              const rawText = proxyData?.candidates?.[0]?.content?.parts?.[0]?.text || proxyData?.text || '{}';
+              const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+              const plan = JSON.parse(cleanedJson);
+              state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
+              state.aiActive = true;
+              state.aiBlend = 1.0;
+              processBackgroundImage();
+              showToast('Scharfer Fahrbahnverlauf erzeugt.', 'success');
+              return;
+            } else if (proxyRes && proxyRes.status !== 404) {
+              const errInfo = await proxyRes.json().catch(() => ({}));
+              const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
+              const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
+              state.bgAiCanvas = applyLocalSharpFallback(fallbackSrc);
+              state.aiActive = true;
+              state.aiBlend = 1.0;
+              processBackgroundImage();
+              if (detail === 'MISSING_KEY') {
+                showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
+              } else {
+                showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
+              }
+              return;
             }
           }
 
@@ -1790,7 +1798,7 @@
                 contents: [{
                   parts: [
                     { text: freePrompt },
-                    { inlineData: { mimeType: 'image/png', data: base64Data } }
+                    { inlineData: { mimeType: sendMime, data: base64Data } }
                   ]
                 }],
                 generationConfig: {
