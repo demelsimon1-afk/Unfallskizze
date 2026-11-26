@@ -230,12 +230,15 @@ module.exports = async function handler(req, res) {
       if (sawFreeTierLimitZero) break;
     }
 
-    // Fallback nur, wenn der Key als unbezahlter Free-Tier-Key mit limit:0 erkannt wurde
+    // Fallback, wenn der Google AI Studio Key auf "Free Tier" (limit: 0 für Bildmodelle) steht:
+    // Nutzt kostenlose Flash-Vision-Modelle ohne Thinking-Overhead und extrahiert das JSON zuverlässig.
     if (sawFreeTierLimitZero) {
-      const visionModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      const visionModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+      let lastVisionError = '';
+
       for (const vModel of visionModels) {
         const vCtrl = new AbortController();
-        const vTimer = setTimeout(() => vCtrl.abort(), 20000);
+        const vTimer = setTimeout(() => vCtrl.abort(), 22000);
         try {
           const vRes = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(key)}`,
@@ -252,7 +255,7 @@ module.exports = async function handler(req, res) {
                     {
                       text: [
                         'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                        'Return ONLY valid JSON with two keys:',
+                        'Return ONLY a valid JSON object with two keys:',
                         '1. "vehicles": array of bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, motorcycle, bicycle) and dark vehicle shadow on the road.',
                         '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, and green areas OUTSIDE the road curbs.',
                         'Keep all road surfaces, curbs, bike lanes, and road markings completely outside the vegetation polygons.'
@@ -277,12 +280,19 @@ module.exports = async function handler(req, res) {
 
           if (vRes.ok) {
             const vData = await vRes.json().catch(() => ({}));
-            const rawText = (vData?.candidates?.[0]?.content?.parts || [])
-              .map(p => p.text || '')
+            const parts = vData?.candidates?.[0]?.content?.parts || [];
+            // Thinking-Parts herausfiltern, damit JSON.parse nicht durch Gedankentext fehlschlägt
+            const rawText = parts
+              .filter(p => !p.thought && typeof p.text === 'string')
+              .map(p => p.text)
               .join('\n')
               .trim();
-            const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-            const parsed = JSON.parse(cleanedJson);
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+              lastVisionError = `${vModel}: Keine JSON-Antwort`;
+              continue;
+            }
+            const parsed = JSON.parse(jsonMatch[0]);
             return res.status(200).json({
               fallbackMode: 'vision_cleanup',
               model: vModel,
@@ -291,11 +301,19 @@ module.exports = async function handler(req, res) {
                 vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
               }
             });
+          } else {
+            const vErr = await vRes.json().catch(() => ({}));
+            lastVisionError = vErr?.error?.message || `HTTP ${vRes.status}`;
           }
-        } catch (_) {
+        } catch (vEx) {
           clearTimeout(vTimer);
+          lastVisionError = vEx?.message || 'Vision-Fehler';
         }
       }
+
+      return res.status(429).json({
+        error: `Google AI Studio Key steht noch auf Free Tier (Bildmodelle limit: 0). Fallback-Hinweis: ${lastVisionError}`
+      });
     }
 
     return res.status(lastStatus).json(lastData);
