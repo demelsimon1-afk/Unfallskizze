@@ -212,25 +212,25 @@
             </p>
 
             <!-- Einklappbare KI-Bereinigung -->
-            <details open class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-2.5 space-y-2">
-              <summary class="flex items-center justify-between gap-2 text-xs font-bold text-indigo-950 cursor-pointer select-none">
-                <span class="flex items-center gap-1.5">
-                  <svg class="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-                  KI-Bereinigung (Optional)
-                </span>
-                <span id="ai-active-badge" class="hidden px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">Aktiv</span>
-              </summary>
-              <div class="pt-2 space-y-2">
-                <p class="text-[11px] text-indigo-900/85 leading-snug">
-                  <strong>Scharfer Fahrbahnverlauf:</strong> Rekonstruiert alle auf dem Luftbild sichtbaren Fahrbahnmarkierungen und Ränder gestochen scharf ohne Fahrzeuge, Schatten und Außen-Vegetation.
-                </p>
-                <button id="btn-ai-clean" type="button" class="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                  <svg id="icon-ai-sparkle" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-                  <svg id="icon-ai-spinner" class="hidden w-4 h-4 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                  <span id="btn-ai-clean-text">Scharfen Fahrbahnverlauf erzeugen</span>
-                </button>
+          <details open class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-2.5 space-y-2">
+            <summary class="flex items-center justify-between gap-2 text-xs font-bold text-indigo-950 cursor-pointer select-none">
+              <span class="flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+                KI-Bereinigung (Optional)
+              </span>
+              <span id="ai-active-badge" class="hidden px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">Aktiv</span>
+            </summary>
+            <div class="pt-2 space-y-2">
+              <p class="text-[11px] text-indigo-900/85 leading-snug">
+                <strong>Fahrbahn bereinigen:</strong> Entfernt Fahrzeuge, Schatten und Außen-Vegetation aus dem Luftbild – ohne neue Straßen oder Markierungen zu erfinden.
+              </p>
+              <button id="btn-ai-clean" type="button" class="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg id="icon-ai-sparkle" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+                <svg id="icon-ai-spinner" class="hidden w-4 h-4 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <span id="btn-ai-clean-text">Fahrbahn bereinigen</span>
+              </button>
 
-                <!-- Vorher-/Nachher-Überblendung zur 1:1 Kontrolle der Fahrbahnmarkierungen -->
+              <!-- Vorher-/Nachher-Überblendung zur 1:1 Kontrolle der Fahrbahnmarkierungen -->
                 <div id="ai-result-bar" class="hidden space-y-2 pt-1.5 border-t border-indigo-200/80">
                   <div class="text-[11px] space-y-1">
                     <div class="flex justify-between font-medium text-indigo-950">
@@ -850,8 +850,8 @@
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
             <div class="text-xs">
-              <div class="font-bold text-slate-900">KI erzeugt scharfes Fahrbahnbild…</div>
-              <div class="text-slate-500">Fahrzeuge, Schatten und Vegetation außenherum werden entfernt; alle erkennbaren Fahrbahnmarkierungen werden gestochen scharf übernommen.</div>
+              <div class="font-bold text-slate-900">KI bereinigt das Luftbild…</div>
+              <div class="text-slate-500">Fahrzeuge, Schatten und Außen-Vegetation werden entfernt; nur vorhandene Straßen und Markierungen bleiben erhalten.</div>
             </div>
           </div>
         </div>
@@ -1470,34 +1470,45 @@
         selectObject(null, null);
 
         updateAiUI();
-        updateWorkflowLockState();
-        syncMeasureInputs();
-        renderObjectList();
         processBackgroundImage();
-        resizeCanvas();
+        updateWorkflowLockState();
         fitCanvasView();
       }
 
       function processBackgroundImage() {
-        if (!state.bgOriginalCanvas || !state.bgProcessedCanvas) return;
+        if (!state.hasBackground || !state.bgProcessedCanvas || !state.bgOriginalCanvas) return;
         const pCtx = state.bgProcessedCanvas.getContext('2d');
         pCtx.clearRect(0, 0, state.bgWidth, state.bgHeight);
 
-        // 1. Basis-Luftbild zeichnen
-        pCtx.globalAlpha = 1.0;
-        pCtx.drawImage(state.bgOriginalCanvas, 0, 0, state.bgWidth, state.bgHeight);
-
-        // 2. Falls KI-Bereinigung aktiv ist, gemäß Überblendregler (0..100%) darüberlegen
-        if (state.aiActive && state.bgAiCanvas) {
-          pCtx.save();
-          pCtx.globalAlpha = Math.max(0, Math.min(1, state.aiBlend));
-          pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
-          pCtx.restore();
+        let drewBase = false;
+        if (state.aiActive && state.aiBlend >= 0.99 && state.bgAiCanvas) {
+          try {
+            pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
+            drewBase = true;
+          } catch (_) {
+            drewBase = false;
+          }
         }
 
-        // 3. Händische Retusche-Ebene (Vordefinierte Markierungen, Radierer, Freiauswahl, Freihand) anwenden
+        if (!drewBase) {
+          try {
+            pCtx.drawImage(state.bgOriginalCanvas, 0, 0, state.bgWidth, state.bgHeight);
+          } catch (_) {}
+
+          if (state.aiActive && state.bgAiCanvas) {
+            try {
+              pCtx.save();
+              pCtx.globalAlpha = Math.max(0, Math.min(1, state.aiBlend));
+              pCtx.drawImage(state.bgAiCanvas, 0, 0, state.bgWidth, state.bgHeight);
+              pCtx.restore();
+            } catch (_) {}
+          }
+        }
+
         if (state.bgRetouchCanvas) {
-          pCtx.drawImage(state.bgRetouchCanvas, 0, 0, state.bgWidth, state.bgHeight);
+          try {
+            pCtx.drawImage(state.bgRetouchCanvas, 0, 0, state.bgWidth, state.bgHeight);
+          } catch (_) {}
         }
 
         renderCanvas();
@@ -1518,7 +1529,7 @@
         if (resultBar) resultBar.classList.toggle('hidden', !state.bgAiCanvas);
 
         const pct = Math.round(state.aiBlend * 100);
-        if (blendVal) blendVal.textContent = `${pct}% Scharf`;
+        if (blendVal) blendVal.textContent = `${pct}% Bereinigt`;
         if (blendRng) blendRng.value = String(pct);
         if (toggleBtn) {
           toggleBtn.textContent = state.aiBlend > 0.5 ? 'Original zeigen' : 'KI-Bild zeigen';
@@ -1529,8 +1540,8 @@
         if (spinner) spinner.classList.toggle('hidden', !state.aiBusy);
         if (cleanText) {
           cleanText.textContent = state.aiBusy
-            ? 'KI rekonstruiert Fahrbahn…'
-            : 'Scharfen Fahrbahnverlauf erzeugen';
+            ? 'KI bereinigt Luftbild…'
+            : 'Fahrbahn bereinigen';
         }
       }
 
@@ -1600,221 +1611,152 @@
         return best.label;
       }
 
-      function renderVectorRoadPlanToCanvas(plan, w, h) {
-        const out = document.createElement('canvas');
-        out.width = w;
-        out.height = h;
-        const c = out.getContext('2d');
+      // Bereinigt das echte Luftbild pixelgenau ohne synthetische Straßen oder erfundene Linien
+      async function renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, customKey) {
+        const strictPrompt = [
+          'Edit ONLY this exact aerial photo at 1:1 pixel alignment.',
+          'STRICT ANTI-HALLUCINATION RULES:',
+          '1. Keep the exact real road layout, real intersections, real curbs, and real road markings from this photo.',
+          '2. NEVER invent, add, extend, or imagine any crosswalks (zebra crossings), pedestrian paths, streets, roads, lanes, arrows, or markings that are not visibly present in the input photo.',
+          '3. If a crosswalk or zebra crossing is NOT clearly visible in the input photo, do NOT draw one anywhere (especially near intersections, junctions, or corners). Only preserve zebra stripes that already exist in the exact same spot in the input photo.',
+          '4. Remove ONLY vehicles, pedestrians, shadows, and surrounding vegetation (trees, grass, bushes) outside the road/curb area.',
+          '5. Fill areas under removed vehicles with the surrounding asphalt and replace outside vegetation with a clean neutral light-gray background (#e2e8f0).'
+        ].join(' ');
 
-        // 1. Neutraler Hintergrund ohne Außen-Vegetation
-        c.fillStyle = '#e2e8f0';
-        c.fillRect(0, 0, w, h);
+        const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
+        const activeKey = customKey || storedKey || (GEMINI_API_KEY || '').trim();
 
-        const toPx = (pt) => ({
-          x: (Math.max(0, Math.min(1000, Number(pt[0]) || 0)) / 1000) * w,
-          y: (Math.max(0, Math.min(1000, Number(pt[1]) || 0)) / 1000) * h
-        });
-
-        // 2. Fahrbahnflächen & Bordsteinkanten zeichnen
-        const asphalt = /^#[0-9a-fA-F]{6}$/.test(plan?.asphaltColor || '') ? plan.asphaltColor : '#3f4652';
-        const roads = Array.isArray(plan?.roads) ? plan.roads : [];
-        roads.forEach(r => {
-          const poly = Array.isArray(r?.polygon) ? r.polygon.map(toPx) : [];
-          if (poly.length < 3) return;
-          c.save();
-          c.fillStyle = asphalt;
-          c.strokeStyle = '#94a3b8';
-          c.lineWidth = Math.max(2, Math.min(w, h) * 0.003);
-          c.lineJoin = 'round';
-          c.beginPath();
-          poly.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
-          c.closePath();
-          c.fill();
-          c.stroke();
-          c.restore();
-        });
-
-        // 3. Verkehrsinseln / Mittelstreifen zeichnen
-        const islands = Array.isArray(plan?.islands) ? plan.islands : [];
-        islands.forEach(isl => {
-          const poly = Array.isArray(isl?.polygon) ? isl.polygon.map(toPx) : [];
-          if (poly.length < 3) return;
-          c.save();
-          c.fillStyle = '#cbd5e1';
-          c.strokeStyle = '#64748b';
-          c.lineWidth = Math.max(2, Math.min(w, h) * 0.0025);
-          c.lineJoin = 'round';
-          c.beginPath();
-          poly.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
-          c.closePath();
-          c.fill();
-          c.stroke();
-          c.restore();
-        });
-
-        // 4. Erkannte Fahrbahnmarkierungen gestochen scharf zeichnen
-        const markings = Array.isArray(plan?.markings) ? plan.markings : [];
-        const baseScale = Math.min(w, h) / 1000;
-        markings.forEach(m => {
-          const pts = Array.isArray(m?.points) ? m.points.map(toPx) : [];
-          if (pts.length === 0) return;
-          const col = m.color === 'yellow' ? '#facc15' : '#ffffff';
-          const strokeW = Math.max(2, (Number(m.width) || 4) * baseScale);
-          const type = m.type || 'solid_line';
-
-          if (type === 'crosswalk' && pts.length >= 2) {
-            drawPredefinedMarking(c, 'crosswalk', col, Math.max(18, strokeW * 6.5), pts[0], pts[pts.length - 1], 0);
-            return;
-          }
-          if (type === 'hatched_area' && pts.length >= 2) {
-            drawPredefinedMarking(c, 'hatched_area', col, Math.max(16, strokeW * 5.5), pts[0], pts[pts.length - 1], 0);
-            return;
-          }
-          if (['arrow_straight', 'arrow_left', 'arrow_right', 'yield_triangle'].includes(type)) {
-            const ang = pts.length >= 2
-              ? (Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180) / Math.PI
-              : 0;
-            drawPredefinedMarking(c, type, col, Math.max(24, strokeW * 8), pts[0], null, ang);
-            return;
+        if (!activeKey && window.location.protocol.startsWith('http')) {
+          let proxyRes = null;
+          try {
+            proxyRes = await fetch('/api/gemini', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt: strictPrompt, imageBase64: base64Data, mimeType: sendMime })
+            });
+          } catch (_) {
+            proxyRes = null;
           }
 
-          if (pts.length < 2) return;
-          c.save();
-          c.strokeStyle = col;
-          c.lineCap = 'butt';
-          c.lineJoin = 'round';
-
-          if (type === 'double_line') {
-            c.lineWidth = strokeW;
-            c.setLineDash([]);
-            for (const side of [-1, 1]) {
-              c.beginPath();
-              pts.forEach((p, idx) => {
-                const prev = pts[Math.max(0, idx - 1)];
-                const next = pts[Math.min(pts.length - 1, idx + 1)];
-                const dx = next.x - prev.x;
-                const dy = next.y - prev.y;
-                const len = Math.max(1e-5, Math.hypot(dx, dy));
-                const ox = (-dy / len) * strokeW * 1.35 * side;
-                const oy = (dx / len) * strokeW * 1.35 * side;
-                if (idx === 0) c.moveTo(p.x + ox, p.y + oy);
-                else c.lineTo(p.x + ox, p.y + oy);
+          if (proxyRes && proxyRes.ok) {
+            const proxyData = await proxyRes.json();
+            const parts = proxyData?.candidates?.[0]?.content?.parts || [];
+            const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+            if (imgPart) {
+              const mime = imgPart.inlineData.mimeType || 'image/png';
+              const outImg = new Image();
+              await new Promise((resolve, reject) => {
+                outImg.onload = resolve;
+                outImg.onerror = reject;
+                outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
               });
-              c.stroke();
+              return outImg;
             }
-          } else {
-            c.lineWidth = type === 'stop_line' ? Math.max(5, strokeW * 2.1) : strokeW;
-            c.setLineDash(type === 'dashed_line' ? [strokeW * 4.5, strokeW * 4.5] : []);
-            c.beginPath();
-            pts.forEach((p, idx) => (idx === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y)));
-            c.stroke();
+          } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
+            const errInfo = await proxyRes.json().catch(() => ({}));
+            const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
+            const err = new Error(detail);
+            err.status = proxyRes.status;
+            throw err;
           }
-          c.restore();
+        }
+
+        if (activeKey) {
+          const imageModels = [
+            'gemini-3.1-flash-image',
+            'gemini-2.5-flash-image'
+          ];
+          let res = null;
+          for (const modelName of imageModels) {
+            const ctrl = new AbortController();
+            const tId = setTimeout(() => ctrl.abort(), 12000);
+            try {
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(activeKey)}`;
+              res = await fetch(apiUrl, {
+                method: 'POST',
+                signal: ctrl.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{
+                    parts: [
+                      { text: strictPrompt },
+                      { inlineData: { mimeType: sendMime, data: base64Data } }
+                    ]
+                  }],
+                  generationConfig: {
+                    responseModalities: ['IMAGE'],
+                    imageConfig: { aspectRatio: targetAspect }
+                  }
+                })
+              });
+            } catch (_) {
+              res = null;
+            } finally {
+              clearTimeout(tId);
+            }
+            if (res && res.ok) break;
+            if (res && res.status !== 404 && res.status !== 429 && res.status !== 503) break;
+          }
+
+          if (!res || !res.ok) {
+            const err = new Error(`HTTP ${res ? res.status : 'Netzwerk'}`);
+            err.status = res ? res.status : 0;
+            throw err;
+          }
+
+          const data = await res.json();
+          const parts = data?.candidates?.[0]?.content?.parts || [];
+          const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+          if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
+
+          const mime = imgPart.inlineData.mimeType || 'image/png';
+          const outImg = new Image();
+          await new Promise((resolve, reject) => {
+            outImg.onload = resolve;
+            outImg.onerror = reject;
+            outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
+          });
+          return outImg;
+        }
+
+        // Standard-Modus in der Gemini-Vorschau (ohne eigenen Key)
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=';
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: strictPrompt },
+                { inlineData: { mimeType: sendMime, data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              responseModalities: ['IMAGE'],
+              imageConfig: { aspectRatio: targetAspect }
+            }
+          })
         });
 
-        return out;
-      }
-
-      function buildLocalCadRoadPlan(srcCanvas) {
-        const w = srcCanvas.width;
-        const h = srcCanvas.height;
-        const out = document.createElement('canvas');
-        out.width = w;
-        out.height = h;
-        const c = out.getContext('2d');
-
-        // Neutraler heller CAD-Hintergrund für Außenbereiche
-        c.fillStyle = '#e2e8f0';
-        c.fillRect(0, 0, w, h);
-
-        try {
-          const grid = 160;
-          const tmp = document.createElement('canvas');
-          tmp.width = grid;
-          tmp.height = grid;
-          const tCtx = tmp.getContext('2d');
-          tCtx.drawImage(srcCanvas, 0, 0, grid, grid);
-          const data = tCtx.getImageData(0, 0, grid, grid).data;
-
-          // Farbanalyse pro Rasterzelle: Asphalt (grau/neutral) vs. Vegetation/Dächer trennen
-          const isRoad = new Uint8Array(grid * grid);
-          for (let i = 0; i < grid * grid; i++) {
-            const r = data[i * 4];
-            const g = data[i * 4 + 1];
-            const b = data[i * 4 + 2];
-            const maxC = Math.max(r, g, b);
-            const minC = Math.min(r, g, b);
-            const sat = maxC - minC;
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            const greenDom = g - Math.max(r, b);
-            const redDom = r - g;
-
-            // Grauer Asphalt & weiße Markierungen (geringe Farbsättigung, kein Grün-/Rotstich)
-            if (sat < 34 && greenDom < 8 && redDom < 16 && lum > 35 && lum < 235) {
-              isRoad[i] = 1;
-            }
-          }
-
-          // Morphologisches Schließen (entfernt kleine Fahrzeug-Lücken auf der Fahrbahn)
-          const closed = new Uint8Array(grid * grid);
-          for (let y = 1; y < grid - 1; y++) {
-            for (let x = 1; x < grid - 1; x++) {
-              let count = 0;
-              for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                  if (isRoad[(y + dy) * grid + (x + dx)]) count++;
-                }
-              }
-              closed[y * grid + x] = count >= 4 ? 1 : 0;
-            }
-          }
-
-          // Sauberen Asphalt & helle Markierungen auf den erkannten Straßenbereich zeichnen
-          const cw = w / grid;
-          const ch = h / grid;
-          c.fillStyle = '#475569';
-          for (let y = 0; y < grid; y++) {
-            for (let x = 0; x < grid; x++) {
-              if (closed[y * grid + x]) {
-                c.fillRect(Math.floor(x * cw), Math.floor(y * ch), Math.ceil(cw) + 1, Math.ceil(ch) + 1);
-              }
-            }
-          }
-
-          // Markierungen & scharfe Kanten aus dem Original darüberlegen
-          const sharp = applyCrispUnsharpMask(srcCanvas, 0.85);
-          const sCtx = sharp.getContext('2d');
-          const fullData = sCtx.getImageData(0, 0, w, h);
-          const fd = fullData.data;
-          for (let y = 0; y < h; y++) {
-            const gy = Math.min(grid - 1, Math.floor((y / h) * grid));
-            for (let x = 0; x < w; x++) {
-              const gx = Math.min(grid - 1, Math.floor((x / w) * grid));
-              const idx = (y * w + x) * 4;
-              if (!closed[gy * grid + gx]) {
-                fd[idx] = 226;
-                fd[idx + 1] = 232;
-                fd[idx + 2] = 240;
-              } else {
-                const lum = 0.299 * fd[idx] + 0.587 * fd[idx + 1] + 0.114 * fd[idx + 2];
-                if (lum > 185) {
-                  // Helle Fahrbahnmarkierungen reinweiß hervorheben
-                  fd[idx] = 255;
-                  fd[idx + 1] = 255;
-                  fd[idx + 2] = 255;
-                }
-              }
-            }
-          }
-          sCtx.putImageData(fullData, 0, 0);
-          return sCtx.canvas;
-        } catch (_) {
-          return applyCrispUnsharpMask(srcCanvas, 0.7);
+        if (!response || !response.ok) {
+          const err = new Error(`HTTP ${response ? response.status : 'Netzwerk'}`);
+          err.status = response ? response.status : 0;
+          throw err;
         }
-      }
 
-      function buildCleanSharpFallback(srcCanvas) {
-        return applyCrispUnsharpMask(srcCanvas, 0.55);
+        const result = await response.json();
+        const parts = result?.candidates?.[0]?.content?.parts || [];
+        const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+        if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
+
+        const mime = imgPart.inlineData.mimeType || 'image/png';
+        const outImg = new Image();
+        await new Promise((resolve, reject) => {
+          outImg.onload = resolve;
+          outImg.onerror = reject;
+          outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
+        });
+        return outImg;
       }
 
       async function runAiRoadCleanup() {
@@ -1839,174 +1781,12 @@
           tCtx.imageSmoothingQuality = 'high';
           tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
 
-          const tempCanvas = applyCrispUnsharpMask(rawScaled, 0.75);
-          const sendMime = 'image/jpeg';
-          const dataUrl = tempCanvas.toDataURL(sendMime, 0.85);
+          const sendMime = 'image/png';
+          const dataUrl = rawScaled.toDataURL(sendMime);
           const base64Data = dataUrl.split(',')[1];
-
-          const freePrompt = [
-            'Analyze this top-down aerial image of a road/intersection and extract the exact 1:1 road geometry and ONLY the visible painted road markings using normalized coordinates from 0 to 1000 (0,0 = top-left, 1000,1000 = bottom-right).',
-            'Ignore all vehicles, shadows, and surrounding vegetation (trees, grass, bushes).',
-            'Return valid JSON with this exact structure:',
-            '{"asphaltColor":"#3f4652","roads":[{"polygon":[[x,y],[x,y],...]}],"islands":[{"polygon":[[x,y],[x,y],...]}],"markings":[{"type":"dashed_line|solid_line|double_line|stop_line|crosswalk|hatched_area|arrow_straight|arrow_left|arrow_right|yield_triangle","color":"white|yellow","width":4,"points":[[x,y],[x,y],...]}]}',
-            'Only include road markings that are genuinely visible in the aerial image; do NOT invent markings on unmarked stretches.'
-          ].join(' ');
-
-          const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
-          const customKey = storedKey || (GEMINI_API_KEY || '').trim();
-
-          // 1. Geschützter Vercel-Server-Endpunkt (/api/gemini) – für alle Besucher nutzbar, Key bleibt unsichtbar
-          if (!customKey && window.location.protocol.startsWith('http')) {
-            let proxyRes = null;
-            try {
-              proxyRes = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: freePrompt, imageBase64: base64Data, mimeType: sendMime })
-              });
-            } catch (_) {
-              proxyRes = null;
-            }
-
-            if (proxyRes && proxyRes.ok) {
-              const proxyData = await proxyRes.json();
-              const rawText = proxyData?.candidates?.[0]?.content?.parts?.[0]?.text || proxyData?.text || '{}';
-              const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-              const plan = JSON.parse(cleanedJson);
-              state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
-              state.aiActive = true;
-              state.aiBlend = 1.0;
-              processBackgroundImage();
-              showToast('Scharfer Fahrbahnverlauf erzeugt.', 'success');
-              return;
-            } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
-              const errInfo = await proxyRes.json().catch(() => ({}));
-              const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
-              state.bgAiCanvas = null;
-              state.aiActive = false;
-              state.aiBlend = 0.0;
-              processBackgroundImage();
-              if (proxyRes.status === 404) {
-                showToast('Datei api/gemini.js auf Vercel nicht gefunden (404) – Pfad in GitHub prüfen.', 'warning');
-              } else if (detail === 'MISSING_KEY') {
-                showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
-              } else if (proxyRes.status === 503 || proxyRes.status === 429) {
-                showToast('Google-KI im Free Tier gerade ausgelastet – bitte in einigen Sekunden erneut versuchen.', 'warning');
-              } else {
-                showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
-              }
-              return;
-            }
-          }
-
-          if (customKey) {
-            // Bevorzugt aktuelle Gemini-Modelle (inkl. Pro/Flash-Preview) mit automatischem Ausweich-Fallback
-            const fallbackModels = [
-              'gemini-3-flash-preview',
-              'gemini-3.8-flash',
-              'gemini-3.5-flash-lite',
-              'gemini-3.1-flash-lite',
-              'gemini-3.6-flash'
-            ];
-            let res = null;
-            for (const modelName of fallbackModels) {
-              const ctrl = new AbortController();
-              const tId = setTimeout(() => ctrl.abort(), 9000);
-              try {
-                const freeUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(customKey)}`;
-                res = await fetch(freeUrl, {
-                  method: 'POST',
-                  signal: ctrl.signal,
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [
-                        { text: freePrompt },
-                        { inlineData: { mimeType: sendMime, data: base64Data } }
-                      ]
-                    }],
-                    generationConfig: {
-                      responseMimeType: 'application/json',
-                      temperature: 0.1
-                    }
-                  })
-                });
-              } catch (_) {
-                res = null;
-              } finally {
-                clearTimeout(tId);
-              }
-              if (res && res.ok) break;
-              if (res && res.status !== 404 && res.status !== 429 && res.status !== 503) break;
-            }
-
-            if (!res || !res.ok) {
-              const err = new Error(`HTTP ${res ? res.status : 'Netzwerk'}`);
-              err.status = res ? res.status : 0;
-              throw err;
-            }
-
-            const data = await res.json();
-            const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-            const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-            const plan = JSON.parse(cleanedJson);
-
-            state.bgAiCanvas = renderVectorRoadPlanToCanvas(plan, state.bgWidth, state.bgHeight);
-            state.aiActive = true;
-            state.aiBlend = 1.0;
-            processBackgroundImage();
-            showToast('Scharfer Fahrbahnverlauf (Free Tier) erzeugt.', 'success');
-            return;
-          }
-
-          // Standard-Modus in der Gemini-Vorschau (ohne eigenen Key)
           const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
-          const promptText = [
-            'Render a razor-sharp, high-definition CAD-style top-down orthogonal road plan from this aerial image with exact 1:1 pixel alignment.',
-            'ROAD MARKING RECONSTRUCTION RULES:',
-            '1. Detect and reconstruct EVERY real painted road marking visible in the aerial photo—including dashed center/lane lines, solid edge lines, double lines, stop lines, crosswalks, hatched islands, bike lane markings, and directional arrows—even when the satellite source is soft, pixelated, or slightly faded. Render all detected markings cleanly and sharply in their exact positions and proportions.',
-            '2. Keep dashed lane lines consistent along their visible course, and do NOT invent new markings on genuinely unmarked asphalt stretches.',
-            '3. Render every road edge, curb, traffic island, and intersection corner with crisp, continuous vector-like precision—zero blur.',
-            '4. Completely remove all vehicles, pedestrians, and shadows from the road surface and fill underneath with clean, uniform dark-gray asphalt.',
-            '5. Remove all surrounding vegetation (trees, bushes, grass, lawns) outside the road/curb area and replace outside surroundings with a clean, uniform neutral light-gray background (#e2e8f0).'
-          ].join(' ');
 
-          const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=';
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: promptText },
-                  { inlineData: { mimeType: 'image/png', data: base64Data } }
-                ]
-              }],
-              generationConfig: {
-                responseModalities: ['IMAGE'],
-                imageConfig: { aspectRatio: targetAspect }
-              }
-            })
-          });
-
-          if (!response || !response.ok) {
-            const err = new Error(`HTTP ${response ? response.status : 'Netzwerk'}`);
-            err.status = response ? response.status : 0;
-            throw err;
-          }
-
-          const result = await response.json();
-          const parts = result?.candidates?.[0]?.content?.parts || [];
-          const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
-          if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
-
-          const mime = imgPart.inlineData.mimeType || 'image/png';
-          const outImg = new Image();
-          await new Promise((resolve, reject) => {
-            outImg.onload = resolve;
-            outImg.onerror = reject;
-            outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
-          });
+          const outImg = await renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, '');
 
           const aiCanvas = document.createElement('canvas');
           aiCanvas.width = state.bgWidth;
@@ -2016,11 +1796,11 @@
           aCtx.imageSmoothingQuality = 'high';
           aCtx.drawImage(outImg, 0, 0, state.bgWidth, state.bgHeight);
 
-          state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.45);
+          state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.35);
           state.aiActive = true;
           state.aiBlend = 1.0;
           processBackgroundImage();
-          showToast('Scharfes Fahrbahnbild mit erkannten Markierungen erzeugt.', 'success');
+          showToast('Luftbild bereinigt – nur vorhandene Straßen und Markierungen wurden übernommen.', 'success');
         } catch (err) {
           state.bgAiCanvas = null;
           state.aiActive = false;
