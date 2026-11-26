@@ -73,6 +73,7 @@ module.exports = async function handler(req, res) {
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let lastStatus = 502;
     let lastData = { error: 'Kein bildfähiges Gemini-Modell verfügbar' };
+    let sawFreeTierLimitZero = false;
 
     for (const modelName of candidateModels) {
       // Ältere 2.0-Image-Modelle unterstützen kein imageConfig.aspectRatio
@@ -80,7 +81,7 @@ module.exports = async function handler(req, res) {
 
       for (let attempt = 0; attempt < 2; attempt++) {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 22000);
+        const timer = setTimeout(() => ctrl.abort(), 16000);
 
         try {
           // Wichtig: Google AI Studio verlangt bei Bildmodellen ['TEXT', 'IMAGE']
@@ -145,10 +146,17 @@ module.exports = async function handler(req, res) {
             return res.status(r.status).json(data);
           }
 
+          // Google AI Studio Free-Tier setzt bei Image-Modellen oft "limit: 0" (429 RESOURCE_EXHAUSTED)
+          const errText = JSON.stringify(data || {});
+          if (r.status === 429 && (/limit:\s*0/i.test(errText) || /free_tier/i.test(errText))) {
+            sawFreeTierLimitZero = true;
+            break;
+          }
+
           // Bei vorübergehender Überlastung einmal kurz warten, sonst nächstes Modell probieren
           if (r.status === 429 || r.status === 503) {
             if (attempt === 0) {
-              await sleep(900);
+              await sleep(700);
               continue;
             }
             break;
@@ -165,11 +173,81 @@ module.exports = async function handler(req, res) {
               : (err?.message || 'Netzwerkfehler')
           };
           if (attempt === 0) {
-            await sleep(700);
+            await sleep(500);
             continue;
           }
           break;
         }
+      }
+
+      // Wenn Free-Tier limit:0 erkannt wurde, nicht weiter alle Image-Modelle durchprobieren
+      if (sawFreeTierLimitZero) break;
+    }
+
+    // Automatischer Free-Tier-Fallback: Gemini Vision (gemini-2.5-flash) erkennt Fahrzeuge,
+    // Schatten und Grünflächen als exakte Koordinaten, damit das Frontend sie 1:1 bereinigt.
+    const visionModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    for (const vModel of visionModels) {
+      const vCtrl = new AbortController();
+      const vTimer = setTimeout(() => vCtrl.abort(), 16000);
+      try {
+        const vRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(key)}`,
+          {
+            method: 'POST',
+            signal: vCtrl.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': key
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  {
+                    text: [
+                      'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
+                      'Return ONLY valid JSON with two keys:',
+                      '1. "vehicles": array of bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, motorcycle, bicycle) and dark vehicle shadow on the road.',
+                      '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, and green areas OUTSIDE the road curbs.',
+                      'Keep all road surfaces, curbs, bike lanes, and road markings completely outside the vegetation polygons.'
+                    ].join(' ')
+                  },
+                  {
+                    inlineData: {
+                      mimeType: mimeType || 'image/jpeg',
+                      data: imageBase64
+                    }
+                  }
+                ]
+              }],
+              generationConfig: {
+                temperature: 0.1,
+                responseMimeType: 'application/json'
+              }
+            })
+          }
+        );
+        clearTimeout(vTimer);
+
+        if (vRes.ok) {
+          const vData = await vRes.json().catch(() => ({}));
+          const rawText = (vData?.candidates?.[0]?.content?.parts || [])
+            .map(p => p.text || '')
+            .join('\n')
+            .trim();
+          const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+          const parsed = JSON.parse(cleanedJson);
+          return res.status(200).json({
+            fallbackMode: 'vision_cleanup',
+            model: vModel,
+            detections: {
+              vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+              vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+            }
+          });
+        }
+      } catch (_) {
+        clearTimeout(vTimer);
       }
     }
 
