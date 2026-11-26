@@ -1807,6 +1807,10 @@
         }
       }
 
+      function buildCleanSharpFallback(srcCanvas) {
+        return applyCrispUnsharpMask(srcCanvas, 0.55);
+      }
+
       async function runAiRoadCleanup() {
         if (!state.hasBackground || !state.bgOriginalCanvas || state.aiBusy) return;
 
@@ -1873,7 +1877,7 @@
               const errInfo = await proxyRes.json().catch(() => ({}));
               const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
               const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-              state.bgAiCanvas = buildLocalCadRoadPlan(fallbackSrc);
+              state.bgAiCanvas = buildCleanSharpFallback(fallbackSrc);
               state.aiActive = true;
               state.aiBlend = 1.0;
               processBackgroundImage();
@@ -1882,7 +1886,7 @@
               } else if (detail === 'MISSING_KEY') {
                 showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
               } else if (proxyRes.status === 503 || proxyRes.status === 429) {
-                showToast('Google-KI kurzzeitig ausgelastet – lokale Fahrbahn-Bereinigung angewendet.', 'info');
+                showToast('Google-KI kurzzeitig ausgelastet – scharfes Luftbild beibehalten.', 'info');
               } else {
                 showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
               }
@@ -2009,12 +2013,12 @@
         } catch (err) {
           if (state.bgTainted) {
             const twin = await ensureCorsMapTwinCanvas();
-            state.bgAiCanvas = buildLocalCadRoadPlan(twin);
+            state.bgAiCanvas = buildCleanSharpFallback(twin);
             state.aiActive = true;
             state.aiBlend = 1.0;
             processBackgroundImage();
           } else {
-            state.bgAiCanvas = buildLocalCadRoadPlan(state.bgOriginalCanvas);
+            state.bgAiCanvas = buildCleanSharpFallback(state.bgOriginalCanvas);
             state.aiActive = true;
             state.aiBlend = 1.0;
             processBackgroundImage();
