@@ -100,7 +100,7 @@ module.exports = async function handler(req, res) {
                 },
                 {
                   inlineData: {
-                    mimeType: mimeType || 'image/png',
+                    mimeType: mimeType || 'image/jpeg',
                     data: imageBase64
                   }
                 }
