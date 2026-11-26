@@ -1709,6 +1709,104 @@
         return out;
       }
 
+      function buildLocalCadRoadPlan(srcCanvas) {
+        const w = srcCanvas.width;
+        const h = srcCanvas.height;
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const c = out.getContext('2d');
+
+        // Neutraler heller CAD-Hintergrund für Außenbereiche
+        c.fillStyle = '#e2e8f0';
+        c.fillRect(0, 0, w, h);
+
+        try {
+          const grid = 160;
+          const tmp = document.createElement('canvas');
+          tmp.width = grid;
+          tmp.height = grid;
+          const tCtx = tmp.getContext('2d');
+          tCtx.drawImage(srcCanvas, 0, 0, grid, grid);
+          const data = tCtx.getImageData(0, 0, grid, grid).data;
+
+          // Farbanalyse pro Rasterzelle: Asphalt (grau/neutral) vs. Vegetation/Dächer trennen
+          const isRoad = new Uint8Array(grid * grid);
+          for (let i = 0; i < grid * grid; i++) {
+            const r = data[i * 4];
+            const g = data[i * 4 + 1];
+            const b = data[i * 4 + 2];
+            const maxC = Math.max(r, g, b);
+            const minC = Math.min(r, g, b);
+            const sat = maxC - minC;
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const greenDom = g - Math.max(r, b);
+            const redDom = r - g;
+
+            // Grauer Asphalt & weiße Markierungen (geringe Farbsättigung, kein Grün-/Rotstich)
+            if (sat < 34 && greenDom < 8 && redDom < 16 && lum > 35 && lum < 235) {
+              isRoad[i] = 1;
+            }
+          }
+
+          // Morphologisches Schließen (entfernt kleine Fahrzeug-Lücken auf der Fahrbahn)
+          const closed = new Uint8Array(grid * grid);
+          for (let y = 1; y < grid - 1; y++) {
+            for (let x = 1; x < grid - 1; x++) {
+              let count = 0;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (isRoad[(y + dy) * grid + (x + dx)]) count++;
+                }
+              }
+              closed[y * grid + x] = count >= 4 ? 1 : 0;
+            }
+          }
+
+          // Sauberen Asphalt & helle Markierungen auf den erkannten Straßenbereich zeichnen
+          const cw = w / grid;
+          const ch = h / grid;
+          c.fillStyle = '#475569';
+          for (let y = 0; y < grid; y++) {
+            for (let x = 0; x < grid; x++) {
+              if (closed[y * grid + x]) {
+                c.fillRect(Math.floor(x * cw), Math.floor(y * ch), Math.ceil(cw) + 1, Math.ceil(ch) + 1);
+              }
+            }
+          }
+
+          // Markierungen & scharfe Kanten aus dem Original darüberlegen
+          const sharp = applyCrispUnsharpMask(srcCanvas, 0.85);
+          const sCtx = sharp.getContext('2d');
+          const fullData = sCtx.getImageData(0, 0, w, h);
+          const fd = fullData.data;
+          for (let y = 0; y < h; y++) {
+            const gy = Math.min(grid - 1, Math.floor((y / h) * grid));
+            for (let x = 0; x < w; x++) {
+              const gx = Math.min(grid - 1, Math.floor((x / w) * grid));
+              const idx = (y * w + x) * 4;
+              if (!closed[gy * grid + gx]) {
+                fd[idx] = 226;
+                fd[idx + 1] = 232;
+                fd[idx + 2] = 240;
+              } else {
+                const lum = 0.299 * fd[idx] + 0.587 * fd[idx + 1] + 0.114 * fd[idx + 2];
+                if (lum > 185) {
+                  // Helle Fahrbahnmarkierungen reinweiß hervorheben
+                  fd[idx] = 255;
+                  fd[idx + 1] = 255;
+                  fd[idx + 2] = 255;
+                }
+              }
+            }
+          }
+          sCtx.putImageData(fullData, 0, 0);
+          return sCtx.canvas;
+        } catch (_) {
+          return applyCrispUnsharpMask(srcCanvas, 0.7);
+        }
+      }
+
       async function runAiRoadCleanup() {
         if (!state.hasBackground || !state.bgOriginalCanvas || state.aiBusy) return;
 
@@ -1719,7 +1817,7 @@
 
         try {
           const sourceForAi = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-          const maxDim = 1280;
+          const maxDim = 768;
           const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
           const sendW = Math.max(64, Math.round(state.bgWidth * scale));
           const sendH = Math.max(64, Math.round(state.bgHeight * scale));
@@ -1733,7 +1831,7 @@
 
           const tempCanvas = applyCrispUnsharpMask(rawScaled, 0.75);
           const sendMime = 'image/jpeg';
-          const dataUrl = tempCanvas.toDataURL(sendMime, 0.9);
+          const dataUrl = tempCanvas.toDataURL(sendMime, 0.85);
           const base64Data = dataUrl.split(',')[1];
 
           const freePrompt = [
@@ -1775,7 +1873,7 @@
               const errInfo = await proxyRes.json().catch(() => ({}));
               const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
               const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-              state.bgAiCanvas = applyLocalSharpFallback(fallbackSrc);
+              state.bgAiCanvas = buildLocalCadRoadPlan(fallbackSrc);
               state.aiActive = true;
               state.aiBlend = 1.0;
               processBackgroundImage();
@@ -1783,6 +1881,8 @@
                 showToast('Datei api/gemini.js auf Vercel nicht gefunden (404) – Pfad in GitHub prüfen.', 'warning');
               } else if (detail === 'MISSING_KEY') {
                 showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
+              } else if (proxyRes.status === 503 || proxyRes.status === 429) {
+                showToast('Google-KI kurzzeitig ausgelastet – lokale Fahrbahn-Bereinigung angewendet.', 'info');
               } else {
                 showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
               }
@@ -1792,7 +1892,7 @@
 
           if (customKey) {
             // 100 % KOSTENLOSES FREE-TIER-MODELL mit schnellem Ausweich-Fallback bei 503/429
-            const fallbackModels = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.6-flash'];
+            const fallbackModels = ['gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
             let res = null;
             for (const modelName of fallbackModels) {
               const ctrl = new AbortController();
@@ -1908,11 +2008,13 @@
           showToast('Scharfes Fahrbahnbild mit erkannten Markierungen erzeugt.', 'success');
         } catch (err) {
           if (state.bgTainted) {
-            state.bgAiCanvas = null;
-            state.aiActive = false;
+            const twin = await ensureCorsMapTwinCanvas();
+            state.bgAiCanvas = buildLocalCadRoadPlan(twin);
+            state.aiActive = true;
+            state.aiBlend = 1.0;
             processBackgroundImage();
           } else {
-            state.bgAiCanvas = applyLocalSharpFallback(state.bgOriginalCanvas);
+            state.bgAiCanvas = buildLocalCadRoadPlan(state.bgOriginalCanvas);
             state.aiActive = true;
             state.aiBlend = 1.0;
             processBackgroundImage();
