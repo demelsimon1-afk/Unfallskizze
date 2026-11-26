@@ -5,9 +5,15 @@ module.exports = async function handler(req, res) {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const { prompt, imageBase64, mimeType } = body;
-    const models = ['gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-3.6-flash'];
-    let lastStatus = 502;
-    let lastData = { error: 'Kein Modell erreichbar' };
+    const models = [
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.6-flash',
+      'gemma-4-31b-it'
+    ];
+    let lastStatus = 503;
+    let lastData = { error: 'KI-Server aktuell ausgelastet' };
 
     for (const model of models) {
       const ctrl = new AbortController();
@@ -33,7 +39,7 @@ module.exports = async function handler(req, res) {
         clearTimeout(timer);
         const data = await r.json();
         if (r.ok) return res.status(200).json(data);
-        lastStatus = r.status;
+        lastStatus = r.status === 404 ? 502 : r.status;
         lastData = data;
         if (r.status !== 404 && r.status !== 503 && r.status !== 429) break;
       } catch (e) {
