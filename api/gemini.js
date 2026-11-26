@@ -64,64 +64,98 @@ module.exports = async function handler(req, res) {
       // Bei Fehler beim Abruf der Modellliste auf bewährten Standard zurückfallen
     }
 
-    if (!activeModel) {
-      activeModel = 'gemini-3.1-flash-image';
-    }
+    const candidateModels = Array.from(new Set([
+      activeModel,
+      'gemini-3.1-flash-image',
+      'gemini-2.5-flash-image',
+      'gemini-flash-latest'
+    ].filter(Boolean)));
 
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 14000);
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    let lastStatus = 503;
+    let lastData = { error: 'Google-KI gerade ausgelastet' };
 
-    try {
-      // generationConfig auf Bildausgabe abstimmen, damit das Frontend inlineData direkt nutzen kann
-      const generationConfig = {
-        responseModalities: ['IMAGE'],
-        temperature: 0.1
-      };
-      if (typeof aspectRatio === 'string' && aspectRatio.trim()) {
-        generationConfig.imageConfig = { aspectRatio: aspectRatio.trim() };
-      }
+    for (const modelName of candidateModels) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 14000);
 
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${encodeURIComponent(key)}`,
-        {
-          method: 'POST',
-          signal: ctrl.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': key
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                {
-                  text:
-                    prompt ||
-                    'Edit this aerial road photo at 1:1 alignment: remove vehicles, shadows, and outside vegetation while keeping existing roads and markings unchanged.'
-                },
-                {
-                  inlineData: {
-                    mimeType: mimeType || 'image/jpeg',
-                    data: imageBase64
-                  }
-                }
-              ]
-            }],
-            generationConfig
-          })
+        try {
+          // generationConfig auf Bildausgabe abstimmen, damit das Frontend inlineData direkt nutzen kann
+          const generationConfig = {
+            responseModalities: ['IMAGE'],
+            temperature: 0.1
+          };
+          if (typeof aspectRatio === 'string' && aspectRatio.trim()) {
+            generationConfig.imageConfig = { aspectRatio: aspectRatio.trim() };
+          }
+
+          const r = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(key)}`,
+            {
+              method: 'POST',
+              signal: ctrl.signal,
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': key
+              },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    {
+                      text:
+                        prompt ||
+                        'Edit this aerial road photo at 1:1 alignment: remove vehicles, shadows, and outside vegetation while keeping existing roads and markings unchanged.'
+                    },
+                    {
+                      inlineData: {
+                        mimeType: mimeType || 'image/jpeg',
+                        data: imageBase64
+                      }
+                    }
+                  ]
+                }],
+                generationConfig
+              })
+            }
+          );
+
+          clearTimeout(timer);
+          const data = await r.json().catch(() => ({}));
+          lastStatus = r.status;
+          lastData = data;
+
+          if (r.ok) {
+            return res.status(r.status).json(data);
+          }
+
+          if (r.status === 429 || r.status === 503) {
+            if (attempt === 0) {
+              await sleep(900);
+              continue;
+            }
+            break;
+          }
+
+          return res.status(r.status).json(data);
+        } catch (err) {
+          clearTimeout(timer);
+          lastStatus = err?.name === 'AbortError' ? 504 : 500;
+          lastData = {
+            error: err?.name === 'AbortError'
+              ? `Timeout (${modelName})`
+              : (err?.message || 'Netzwerkfehler')
+          };
+          if (attempt === 0) {
+            await sleep(700);
+            continue;
+          }
+          break;
         }
-      );
-
-      clearTimeout(timer);
-      const data = await r.json().catch(() => ({}));
-      return res.status(r.status).json(data);
-    } catch (err) {
-      clearTimeout(timer);
-      return res.status(500).json({
-        error: err?.name === 'AbortError'
-          ? `Timeout (${activeModel})`
-          : (err?.message || 'Netzwerkfehler')
-      });
+      }
     }
+
+    return res.status(lastStatus).json(lastData);
   } catch (err) {
     return res.status(500).json({ error: err?.message || 'Server error' });
   }
