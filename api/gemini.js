@@ -32,7 +32,7 @@ module.exports = async function handler(req, res) {
         const candidate = available.find(m =>
           Array.isArray(m.supportedGenerationMethods) &&
           m.supportedGenerationMethods.includes('generateContent') &&
-          /flash/i.test(m.name || '')
+          /pro/i.test(m.name || '')
         ) || available.find(m =>
           Array.isArray(m.supportedGenerationMethods) &&
           m.supportedGenerationMethods.includes('generateContent')
@@ -50,7 +50,7 @@ module.exports = async function handler(req, res) {
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 9000);
+    const timer = setTimeout(() => ctrl.abort(), 14000);
 
     try {
       const r = await fetch(
