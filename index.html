@@ -1791,29 +1791,38 @@
           }
 
           if (customKey) {
-            // 100 % KOSTENLOSES FREE-TIER-MODELL mit automatischem Ausweich-Fallback bei 503/429
-            const fallbackModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'];
+            // 100 % KOSTENLOSES FREE-TIER-MODELL mit schnellem Ausweich-Fallback bei 503/429
+            const fallbackModels = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.6-flash'];
             let res = null;
             for (const modelName of fallbackModels) {
-              const freeUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(customKey)}`;
-              res = await fetch(freeUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{
-                    parts: [
-                      { text: freePrompt },
-                      { inlineData: { mimeType: sendMime, data: base64Data } }
-                    ]
-                  }],
-                  generationConfig: {
-                    responseMimeType: 'application/json',
-                    temperature: 0.1
-                  }
-                })
-              });
-              if (res.ok) break;
-              if (res.status !== 404 && res.status !== 429 && res.status !== 503) break;
+              const ctrl = new AbortController();
+              const tId = setTimeout(() => ctrl.abort(), 9000);
+              try {
+                const freeUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(customKey)}`;
+                res = await fetch(freeUrl, {
+                  method: 'POST',
+                  signal: ctrl.signal,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [
+                        { text: freePrompt },
+                        { inlineData: { mimeType: sendMime, data: base64Data } }
+                      ]
+                    }],
+                    generationConfig: {
+                      responseMimeType: 'application/json',
+                      temperature: 0.1
+                    }
+                  })
+                });
+              } catch (_) {
+                res = null;
+              } finally {
+                clearTimeout(tId);
+              }
+              if (res && res.ok) break;
+              if (res && res.status !== 404 && res.status !== 429 && res.status !== 503) break;
             }
 
             if (!res || !res.ok) {
@@ -1898,11 +1907,16 @@
           processBackgroundImage();
           showToast('Scharfes Fahrbahnbild mit erkannten Markierungen erzeugt.', 'success');
         } catch (err) {
-          const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-          state.bgAiCanvas = applyLocalSharpFallback(fallbackSrc);
-          state.aiActive = true;
-          state.aiBlend = 1.0;
-          processBackgroundImage();
+          if (state.bgTainted) {
+            state.bgAiCanvas = null;
+            state.aiActive = false;
+            processBackgroundImage();
+          } else {
+            state.bgAiCanvas = applyLocalSharpFallback(state.bgOriginalCanvas);
+            state.aiActive = true;
+            state.aiBlend = 1.0;
+            processBackgroundImage();
+          }
 
           const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
           const hasAnyKey = Boolean(storedKey || (GEMINI_API_KEY || '').trim());
