@@ -229,7 +229,7 @@
               <div class="space-y-1">
                 <label for="select-ai-model-tier" class="block text-[10.5px] font-semibold text-indigo-950">KI-Modus:</label>
                 <select id="select-ai-model-tier" class="w-full bg-white border border-indigo-300 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="free" selected>Gemini 2.5 Flash (100 % Kostenlos · Free Tier)</option>
+                  <option value="free" selected>Gemini 3.8 Flash (100 % Kostenlos · Free Tier)</option>
                   <option value="pro">Gemini 3 Pro Image (Bezahl-Account · 2K)</option>
                   <option value="flash3">Gemini 3.1 Flash Image (Bezahl-Account · 2K)</option>
                   <option value="flash25">Gemini 2.5 Flash Image (Bezahl-Account)</option>
@@ -1880,805 +1880,81 @@
 
           // 100 % kostenloser Free-Tier-Modus auch bei direkt im Browser eingegebenem API-Key
           if (sawFreeTierLimitZero) {
-            const visionModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
-            for (const vModel of visionModels) {
-              try {
-                const vUrl = `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(activeKey)}`;
-                const vRes = await fetch(vUrl, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [
-                        {
-                          text: [
-                            'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
-                            'Return ONLY a valid JSON object with two keys:',
-                            '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
-                            '2. "vegetation": array of polygons (each polygon is an array of [y, x] points in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
-                            'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
-                          ].join(' ')
-                        },
-                        { inlineData: { mimeType: sendMime, data: base64Data } }
-                      ]
-                    }],
-                    generationConfig: { temperature: 0.1, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
-                  })
-                });
-                if (vRes.ok) {
-                  const vData = await vRes.json();
-                  const parts = vData?.candidates?.[0]?.content?.parts || [];
-                  const rawText = parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('\n').trim();
-                  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-                  if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    return {
-                      mode: 'vision_cleanup',
-                      model: vModel,
-                      detections: {
-                        vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                        vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
-                      }
-                    };
+            const discoveredFree = [];
+            try {
+              const mRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(activeKey)}`);
+              if (mRes.ok) {
+                const mData = await mRes.json();
+                for (const m of (mData?.models || [])) {
+                  const n = (m.name || '').replace(/^models\//, '');
+                  if ((m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(n) && !/image|tts|audio|live/i.test(n)) {
+                    discoveredFree.push(n);
                   }
                 }
-              } catch (_) {}
-            }
-          }
+              }
+            } catch (_) {}
 
-          const detail = lastErrJson?.error?.message || `HTTP ${res ? res.status : 'Netzwerk'}`;
-          const err = new Error(detail);
-          err.status = res ? res.status : 0;
-          throw err;
-        }
+            const visionModels = Array.from(new Set([
+              'gemini-3.8-flash',
+              'gemini-flash-latest',
+              ...discoveredFree,
+              'gemini-3-flash-preview',
+              'gemini-2.5-flash'
+            ]));
 
-        // Standard-Modus in der Gemini-Vorschau (ohne eigenen Key)
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=';
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: strictPrompt },
-                { inlineData: { mimeType: sendMime, data: base64Data } }
-              ]
-            }],
-            generationConfig: {
-              responseModalities: ['IMAGE'],
-              imageConfig: { aspectRatio: targetAspect }
-            }
-          })
-        });
-
-        if (!response || !response.ok) {
-          const err = new Error(`HTTP ${response ? response.status : 'Netzwerk'}`);
-          err.status = response ? response.status : 0;
-          throw err;
-        }
-
-        const result = await response.json();
-        const parts = result?.candidates?.[0]?.content?.parts || [];
-        const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
-        if (!imgPart) throw new Error('Kein Bild in der KI-Antwort');
-
-        const mime = imgPart.inlineData.mimeType || 'image/png';
-        const outImg = new Image();
-        await new Promise((resolve, reject) => {
-          outImg.onload = resolve;
-          outImg.onerror = reject;
-          outImg.src = `data:${mime};base64,${imgPart.inlineData.data}`;
-        });
-        return { mode: 'image', img: outImg, model: 'gemini-3.1-flash-image' };
-      }
-
-      async function runAiRoadCleanup() {
-        if (!state.hasBackground || !state.bgOriginalCanvas || state.aiBusy) return;
-
-        state.aiBusy = true;
-        updateAiUI();
-        const overlay = document.getElementById('ai-loading-overlay');
-        if (overlay) overlay.classList.remove('hidden');
-
-        try {
-          const sourceForAi = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
-          // Hohe Eingangsauflösung (bis 1280 px) für gestochen scharfe Markierungen & Bordsteine
-          const maxDim = state.aiModelTier === 'flash25' ? 896 : 1280;
-          const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
-          const sendW = Math.max(64, Math.round(state.bgWidth * scale));
-          const sendH = Math.max(64, Math.round(state.bgHeight * scale));
-          const rawScaled = document.createElement('canvas');
-          rawScaled.width = sendW;
-          rawScaled.height = sendH;
-          const tCtx = rawScaled.getContext('2d');
-          tCtx.imageSmoothingEnabled = true;
-          tCtx.imageSmoothingQuality = 'high';
-          tCtx.drawImage(sourceForAi, 0, 0, sendW, sendH);
-
-          const sendMime = 'image/jpeg';
-          const jpegQuality = 0.88;
-          const dataUrl = rawScaled.toDataURL(sendMime, jpegQuality);
-          const base64Data = dataUrl.split(',')[1];
-          const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
-
-          const outcome = await renderCleanPhotoFromModel(base64Data, sendMime, targetAspect, '');
-          state.aiUsedModel = outcome.model || '';
-
-          if (outcome.mode === 'vision_cleanup') {
-            state.bgAiCanvas = applyVisionCleanupToCanvas(sourceForAi, outcome.detections);
-            state.aiActive = true;
-            state.aiBlend = 1.0;
-            processBackgroundImage();
-            showToast(`Luftbild kostenlos mit ${outcome.model || 'Gemini 2.5 Flash'} bereinigt.`, 'success');
-          } else {
-            const aiCanvas = document.createElement('canvas');
-            aiCanvas.width = state.bgWidth;
-            aiCanvas.height = state.bgHeight;
-            const aCtx = aiCanvas.getContext('2d');
-            aCtx.imageSmoothingEnabled = true;
-            aCtx.imageSmoothingQuality = 'high';
-            aCtx.drawImage(outcome.img, 0, 0, state.bgWidth, state.bgHeight);
-
-            state.bgAiCanvas = applyCrispUnsharpMask(aiCanvas, 0.28);
-            state.aiActive = true;
-            state.aiBlend = 1.0;
-            processBackgroundImage();
-            showToast(`Luftbild hochauflösend mit ${outcome.model || 'Gemini Pro'} bereinigt.`, 'success');
-          }
-        } catch (err) {
-          state.bgAiCanvas = null;
-          state.aiActive = false;
-          state.aiBlend = 0.0;
-          state.aiUsedModel = '';
-          processBackgroundImage();
-
-          const storedKey = (localStorage.getItem('unfallskizze_gemini_api_key') || '').trim();
-          const hasAnyKey = Boolean(storedKey || (GEMINI_API_KEY || '').trim());
-          const errMsg = String(err?.message || '');
-          if (errMsg.includes('MISSING_KEY')) {
-            showToast('Vercel: GEMINI_API_KEY fehlt im aktuellen Deployment – bitte in Vercel unter Deployments → Redeploy klicken.', 'warning');
-          } else if (!hasAnyKey && (err?.status === 400 || err?.status === 403)) {
-            const keyDetails = document.getElementById('ai-apikey-details');
-            const keyInput = document.getElementById('input-gemini-apikey');
-            if (keyDetails) keyDetails.open = true;
-            if (keyInput) keyInput.focus();
-            showToast(`API-Key prüfen (${errMsg || 'HTTP ' + err.status}).`, 'warning');
-          } else {
-            showToast(`KI-Hinweis: ${errMsg || 'Anfrage fehlgeschlagen'} – Original-Luftbild bleibt erhalten.`, 'warning');
-          }
-        } finally {
-          state.aiBusy = false;
-          updateAiUI();
-          if (overlay) overlay.classList.add('hidden');
-        }
-      }
-
-      /* -------------------- Händische Retusche & Vordefinierte Markierungen -------------------- */
-      function pushRetouchHistory() {
-        if (!state.bgRetouchCanvas) return;
-        const snap = document.createElement('canvas');
-        snap.width = state.bgWidth;
-        snap.height = state.bgHeight;
-        snap.getContext('2d').drawImage(state.bgRetouchCanvas, 0, 0);
-        state.retouchHistory.push(snap);
-        if (state.retouchHistory.length > 20) state.retouchHistory.shift();
-      }
-
-      function undoRetouch() {
-        if (!state.bgRetouchCanvas) return;
-        if (state.retouchHistory.length === 0) {
-          showToast('Keine weitere Markierungs-Korrektur zum Zurücknehmen.', 'info');
-          return;
-        }
-        const prev = state.retouchHistory.pop();
-        const rCtx = state.bgRetouchCanvas.getContext('2d');
-        rCtx.clearRect(0, 0, state.bgWidth, state.bgHeight);
-        rCtx.drawImage(prev, 0, 0);
-        processBackgroundImage();
-        showToast('Letzte Korrektur zurückgenommen.', 'info');
-      }
-
-      function getSelectedPresetMarking() {
-        return PREDEFINED_MARKINGS.find(p => p.id === state.presetMarkingId) || PREDEFINED_MARKINGS[0];
-      }
-
-      function updatePresetMarkingUI() {
-        const preset = getSelectedPresetMarking();
-        document.querySelectorAll('.preset-marking-btn').forEach(btn => {
-          const isSel = btn.dataset.presetId === preset.id;
-          btn.className = `preset-marking-btn p-1.5 rounded-lg border text-left flex items-center gap-1.5 transition text-[10.5px] font-semibold ${
-            isSel
-              ? 'border-blue-600 bg-blue-50 text-blue-900 shadow-2xs'
-              : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-          }`;
-        });
-
-        const sizeLbl = document.getElementById('preset-size-label');
-        const sizeVal = document.getElementById('val-preset-size');
-        const sizeRng = document.getElementById('rng-preset-size');
-        const angleRow = document.getElementById('preset-angle-row');
-        const hintEl = document.getElementById('preset-usage-hint');
-
-        if (sizeLbl) sizeLbl.textContent = preset.sizeLabel || 'Größe';
-        if (sizeRng) sizeRng.value = String(state.presetSize);
-        if (sizeVal) sizeVal.textContent = `${state.presetSize} px`;
-        if (angleRow) angleRow.classList.toggle('hidden', preset.mode !== 'stamp');
-        if (hintEl) hintEl.textContent = preset.hint;
-      }
-
-      function renderPresetMarkingGrid() {
-        const grid = document.getElementById('preset-marking-grid');
-        if (!grid) return;
-        grid.innerHTML = PREDEFINED_MARKINGS.map(p => `
-          <button type="button" data-preset-id="${p.id}" class="preset-marking-btn p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-left flex items-center gap-1.5 transition text-[10.5px] font-semibold">
-            <span class="text-slate-700">${p.svg}</span>
-            <span class="truncate">${p.name}</span>
-          </button>
-        `).join('');
-
-        grid.querySelectorAll('.preset-marking-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            state.presetMarkingId = btn.dataset.presetId;
-            const p = getSelectedPresetMarking();
-            state.presetSize = p.defaultSize;
-            updatePresetMarkingUI();
-            updateToolBanner();
-            renderCanvas();
-          });
-        });
-        updatePresetMarkingUI();
-      }
-
-      function setRetouchTool(toolName) {
-        if (!state.hasBackground && toolName !== null) {
-          showToast('Bitte laden Sie zuerst ein Luftbild.', 'warning');
-          return;
-        }
-        if (state.retouchTool === toolName) {
-          toolName = null;
-        }
-        state.retouchTool = toolName;
-        state.lassoPoints = [];
-        state.cadLineStart = null;
-        state.lastRetouchPt = null;
-
-        const badge = document.getElementById('retouch-active-badge');
-        const box = document.getElementById('retouch-options-box');
-        const presetOpts = document.getElementById('retouch-preset-opts');
-        const sizeRow = document.getElementById('retouch-size-row');
-        const asphaltOpts = document.getElementById('retouch-asphalt-opts');
-        const markingOpts = document.getElementById('retouch-marking-opts');
-        const sizeLbl = document.getElementById('retouch-size-label');
-
-        if (badge) badge.classList.toggle('hidden', !toolName);
-        if (box) box.classList.toggle('hidden', !toolName);
-
-        document.querySelectorAll('.retouch-tool-btn').forEach(btn => {
-          btn.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50', 'border-blue-500', 'text-blue-900');
-        });
-
-        const btnMap = {
-          preset_marking: 'btn-retouch-preset',
-          eraser: 'btn-retouch-eraser',
-          lasso: 'btn-retouch-lasso',
-          marking_draw: 'btn-retouch-marking',
-          cad_line: 'btn-retouch-cad-line'
-        };
-        if (toolName && btnMap[toolName]) {
-          const activeBtn = document.getElementById(btnMap[toolName]);
-          if (activeBtn) {
-            activeBtn.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50', 'border-blue-500', 'text-blue-900');
-          }
-        }
-
-        if (presetOpts) presetOpts.classList.toggle('hidden', toolName !== 'preset_marking');
-        if (sizeRow) sizeRow.classList.toggle('hidden', toolName === 'preset_marking' || toolName === 'lasso');
-        if (asphaltOpts) asphaltOpts.classList.toggle('hidden', toolName !== 'eraser' && toolName !== 'lasso');
-        if (markingOpts) markingOpts.classList.toggle('hidden', toolName !== 'marking_draw' && toolName !== 'cad_line');
-        if (sizeLbl) {
-          sizeLbl.textContent = (toolName === 'marking_draw' || toolName === 'cad_line') ? 'Linienbreite' : 'Pinselbreite';
-        }
-
-        if (toolName === 'preset_marking') {
-          updatePresetMarkingUI();
-        }
-
-        state.activeTool = toolName ? 'retouch' : 'select';
-        updateCanvasToolButtons();
-        updateToolBanner();
-        renderCanvas();
-      }
-
-      function getReadablePixelContext() {
-        const candidates = [
-          state.bgProcessedCanvas,
-          state.aiActive ? state.bgAiCanvas : null,
-          state.bgCorsCanvas
-        ].filter(Boolean);
-
-        for (const c of candidates) {
-          try {
-            const pCtx = c.getContext('2d');
-            pCtx.getImageData(0, 0, 1, 1);
-            return pCtx;
-          } catch (_) {
-            // Nächsten nicht-tainted Canvas prüfen
-          }
-        }
-        return null;
-      }
-
-      function sampleAsphaltColorAt(ix, iy) {
-        const pCtx = getReadablePixelContext();
-        if (!pCtx) return state.retouchColor;
-        try {
-          const r = Math.max(10, Math.round(state.retouchSize * 1.4));
-          const sx = Math.max(0, Math.min(state.bgWidth - 1, Math.round(ix - r)));
-          const sy = Math.max(0, Math.min(state.bgHeight - 1, Math.round(iy - r)));
-          const sw = Math.min(state.bgWidth - sx, r * 2);
-          const sh = Math.min(state.bgHeight - sy, r * 2);
-          const data = pCtx.getImageData(sx, sy, sw, sh).data;
-
-          const pixels = [];
-          for (let i = 0; i < data.length; i += 16) {
-            const R = data[i];
-            const G = data[i + 1];
-            const B = data[i + 2];
-            const lum = 0.299 * R + 0.587 * G + 0.114 * B;
-            pixels.push({ R, G, B, lum });
-          }
-          if (pixels.length === 0) return state.retouchColor;
-          pixels.sort((a, b) => a.lum - b.lum);
-          const target = pixels[Math.floor(pixels.length * 0.35)];
-          return `rgb(${target.R}, ${target.G}, ${target.B})`;
-        } catch (_) {
-          return state.retouchColor;
-        }
-      }
-
-      function pickColorFromCanvasAt(ix, iy) {
-        const pCtx = getReadablePixelContext();
-        if (!pCtx) {
-          showToast('Farbe konnte aus dieser Bildquelle nicht ausgelesen werden.', 'warning');
-          return;
-        }
-        try {
-          const x = Math.max(0, Math.min(state.bgWidth - 1, Math.round(ix)));
-          const y = Math.max(0, Math.min(state.bgHeight - 1, Math.round(iy)));
-          const d = pCtx.getImageData(x, y, 1, 1).data;
-          const hex = '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
-          state.retouchColor = hex;
-          state.retouchAutoAsphalt = false;
-          const chk = document.getElementById('chk-retouch-auto-asphalt');
-          const inp = document.getElementById('input-retouch-color');
-          if (chk) chk.checked = false;
-          if (inp) inp.value = hex;
-          showToast(`Straßenfarbe übernommen (${hex}).`, 'success');
-        } catch (_) {
-          showToast('Farbe konnte aus dieser Bildquelle nicht ausgelesen werden.', 'warning');
-        }
-      }
-
-      function applyRetouchStrokeSegment(p1, p2) {
-        if (!state.bgRetouchCanvas) return;
-        const rCtx = state.bgRetouchCanvas.getContext('2d');
-        rCtx.save();
-        rCtx.lineCap = 'round';
-        rCtx.lineJoin = 'round';
-
-        if (state.retouchTool === 'eraser') {
-          const fillCol = state.retouchAutoAsphalt
-            ? sampleAsphaltColorAt(p2.x, p2.y)
-            : state.retouchColor;
-          rCtx.strokeStyle = fillCol;
-          rCtx.lineWidth = state.retouchSize;
-          rCtx.setLineDash([]);
-          rCtx.beginPath();
-          rCtx.moveTo(p1.x, p1.y);
-          rCtx.lineTo(p2.x, p2.y);
-          rCtx.stroke();
-        } else if (state.retouchTool === 'marking_draw') {
-          const style = state.retouchMarkingStyle;
-          rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
-          rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
-          rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.6, state.retouchSize * 1.4] : []);
-          rCtx.beginPath();
-          rCtx.moveTo(p1.x, p1.y);
-          rCtx.lineTo(p2.x, p2.y);
-          rCtx.stroke();
-        }
-        rCtx.restore();
-        processBackgroundImage();
-      }
-
-      function drawCadStraightLineToRetouch(p1, p2) {
-        if (!state.bgRetouchCanvas || !p1 || !p2) return;
-        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        if (dist < 3) return;
-        pushRetouchHistory();
-        const rCtx = state.bgRetouchCanvas.getContext('2d');
-        const style = state.retouchMarkingStyle;
-        rCtx.save();
-        rCtx.lineCap = 'butt';
-        rCtx.lineJoin = 'round';
-        rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
-        rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
-        rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.8, state.retouchSize * 1.5] : []);
-        rCtx.beginPath();
-        rCtx.moveTo(p1.x, p1.y);
-        rCtx.lineTo(p2.x, p2.y);
-        rCtx.stroke();
-        rCtx.restore();
-        processBackgroundImage();
-      }
-
-      function applyRetouchLasso(points) {
-        if (!state.bgRetouchCanvas || points.length < 3) return;
-        pushRetouchHistory();
-        let cx = 0;
-        let cy = 0;
-        points.forEach(p => { cx += p.x; cy += p.y; });
-        cx /= points.length;
-        cy /= points.length;
-
-        const fillCol = state.retouchAutoAsphalt
-          ? sampleAsphaltColorAt(cx, cy)
-          : state.retouchColor;
-
-        const rCtx = state.bgRetouchCanvas.getContext('2d');
-        rCtx.save();
-        rCtx.fillStyle = fillCol;
-        rCtx.strokeStyle = fillCol;
-        rCtx.lineWidth = 2;
-        rCtx.lineJoin = 'round';
-        rCtx.beginPath();
-        points.forEach((p, idx) => {
-          if (idx === 0) rCtx.moveTo(p.x, p.y);
-          else rCtx.lineTo(p.x, p.y);
-        });
-        rCtx.closePath();
-        rCtx.fill();
-        rCtx.stroke();
-        rCtx.restore();
-        processBackgroundImage();
-        showToast('Markierter Bereich bereinigt.', 'success');
-      }
-
-      /* -------------------- Zeichenfunktion für vordefinierte StVO-Markierungen -------------------- */
-      function drawPredefinedMarking(targetCtx, presetId, color, sizePx, p1, p2, angleDeg = 0) {
-        targetCtx.save();
-        targetCtx.strokeStyle = color;
-        targetCtx.fillStyle = color;
-        targetCtx.lineCap = 'butt';
-        targetCtx.lineJoin = 'miter';
-
-        const dx = p2 ? p2.x - p1.x : 0;
-        const dy = p2 ? p2.y - p1.y : 0;
-        const dist = Math.hypot(dx, dy);
-
-        if (presetId === 'dashed_line') {
-          if (dist < 2) { targetCtx.restore(); return; }
-          const w = Math.max(2, sizePx);
-          targetCtx.lineWidth = w;
-          targetCtx.setLineDash([w * 4.5, w * 4.5]);
-          targetCtx.beginPath();
-          targetCtx.moveTo(p1.x, p1.y);
-          targetCtx.lineTo(p2.x, p2.y);
-          targetCtx.stroke();
-        } else if (presetId === 'solid_line') {
-          if (dist < 2) { targetCtx.restore(); return; }
-          targetCtx.lineWidth = Math.max(2, sizePx);
-          targetCtx.setLineDash([]);
-          targetCtx.beginPath();
-          targetCtx.moveTo(p1.x, p1.y);
-          targetCtx.lineTo(p2.x, p2.y);
-          targetCtx.stroke();
-        } else if (presetId === 'double_line') {
-          if (dist < 2) { targetCtx.restore(); return; }
-          const w = Math.max(2, sizePx);
-          const gap = w * 1.4;
-          const nx = -dy / dist;
-          const ny = dx / dist;
-          targetCtx.lineWidth = w;
-          targetCtx.setLineDash([]);
-          for (const side of [-1, 1]) {
-            targetCtx.beginPath();
-            targetCtx.moveTo(p1.x + nx * gap * side, p1.y + ny * gap * side);
-            targetCtx.lineTo(p2.x + nx * gap * side, p2.y + ny * gap * side);
-            targetCtx.stroke();
-          }
-        } else if (presetId === 'stop_line') {
-          if (dist < 2) { targetCtx.restore(); return; }
-          targetCtx.lineWidth = Math.max(4, sizePx);
-          targetCtx.setLineDash([]);
-          targetCtx.beginPath();
-          targetCtx.moveTo(p1.x, p1.y);
-          targetCtx.lineTo(p2.x, p2.y);
-          targetCtx.stroke();
-        } else if (presetId === 'crosswalk') {
-          if (dist < 4) { targetCtx.restore(); return; }
-          const depth = Math.max(12, sizePx);
-          const angle = Math.atan2(dy, dx);
-          targetCtx.translate(p1.x, p1.y);
-          targetCtx.rotate(angle);
-          const stripeW = Math.max(5, depth * 0.16);
-          const step = stripeW * 2;
-          for (let pos = 0; pos + stripeW <= dist; pos += step) {
-            targetCtx.fillRect(pos, -depth / 2, stripeW, depth);
-          }
-        } else if (presetId === 'hatched_area') {
-          if (dist < 4) { targetCtx.restore(); return; }
-          const halfW = Math.max(8, sizePx / 2);
-          const angle = Math.atan2(dy, dx);
-          targetCtx.translate(p1.x, p1.y);
-          targetCtx.rotate(angle);
-          const borderW = Math.max(2, halfW * 0.14);
-          targetCtx.lineWidth = borderW;
-          targetCtx.strokeRect(0, -halfW, dist, halfW * 2);
-
-          targetCtx.beginPath();
-          targetCtx.rect(0, -halfW, dist, halfW * 2);
-          targetCtx.clip();
-
-          const spacing = Math.max(8, halfW * 0.55);
-          targetCtx.lineWidth = Math.max(2, halfW * 0.16);
-          for (let x = -halfW * 2; x < dist + halfW * 2; x += spacing) {
-            targetCtx.beginPath();
-            targetCtx.moveTo(x, halfW);
-            targetCtx.lineTo(x + halfW * 1.4, -halfW);
-            targetCtx.stroke();
-          }
-        } else {
-          const s = Math.max(14, sizePx);
-          const rad = (angleDeg * Math.PI) / 180;
-          targetCtx.translate(p1.x, p1.y);
-          targetCtx.rotate(rad);
-
-          if (presetId === 'arrow_straight') {
-            const shaftW = s * 0.13;
-            const headW = s * 0.36;
-            const headL = s * 0.36;
-            targetCtx.beginPath();
-            targetCtx.moveTo(-s * 0.5, -shaftW / 2);
-            targetCtx.lineTo(s * 0.5 - headL, -shaftW / 2);
-            targetCtx.lineTo(s * 0.5 - headL, -headW / 2);
-            targetCtx.lineTo(s * 0.5, 0);
-            targetCtx.lineTo(s * 0.5 - headL, headW / 2);
-            targetCtx.lineTo(s * 0.5 - headL, shaftW / 2);
-            targetCtx.lineTo(-s * 0.5, shaftW / 2);
-            targetCtx.closePath();
-            targetCtx.fill();
-          } else if (presetId === 'arrow_left' || presetId === 'arrow_right') {
-            const dir = presetId === 'arrow_left' ? -1 : 1;
-            targetCtx.lineWidth = Math.max(2.5, s * 0.13);
-            targetCtx.lineCap = 'round';
-            targetCtx.lineJoin = 'round';
-            targetCtx.beginPath();
-            targetCtx.moveTo(-s * 0.45, 0);
-            targetCtx.lineTo(s * 0.05, 0);
-            targetCtx.quadraticCurveTo(s * 0.25, 0, s * 0.25, dir * s * 0.22);
-            targetCtx.lineTo(s * 0.25, dir * s * 0.42);
-            targetCtx.stroke();
-
-            const tipY = dir * s * 0.48;
-            const headS = s * 0.18;
-            targetCtx.beginPath();
-            targetCtx.moveTo(s * 0.25, tipY);
-            targetCtx.lineTo(s * 0.25 - headS, tipY - dir * headS * 1.1);
-            targetCtx.lineTo(s * 0.25 + headS, tipY - dir * headS * 1.1);
-            targetCtx.closePath();
-            targetCtx.fill();
-          } else if (presetId === 'arrow_straight_left' || presetId === 'arrow_straight_right') {
-            const dir = presetId === 'arrow_straight_left' ? -1 : 1;
-            const lw = Math.max(2.2, s * 0.11);
-            targetCtx.lineWidth = lw;
-            targetCtx.lineCap = 'round';
-            targetCtx.beginPath();
-            targetCtx.moveTo(-s * 0.48, -dir * s * 0.1);
-            targetCtx.lineTo(s * 0.36, -dir * s * 0.1);
-            targetCtx.stroke();
-            targetCtx.beginPath();
-            targetCtx.moveTo(s * 0.5, -dir * s * 0.1);
-            targetCtx.lineTo(s * 0.28, -dir * s * 0.1 - s * 0.15);
-            targetCtx.lineTo(s * 0.28, -dir * s * 0.1 + s * 0.15);
-            targetCtx.closePath();
-            targetCtx.fill();
-            targetCtx.beginPath();
-            targetCtx.moveTo(-s * 0.12, -dir * s * 0.1);
-            targetCtx.lineTo(s * 0.14, dir * s * 0.34);
-            targetCtx.stroke();
-            targetCtx.beginPath();
-            targetCtx.moveTo(s * 0.2, dir * s * 0.44);
-            targetCtx.lineTo(s * 0.02, dir * s * 0.34);
-            targetCtx.lineTo(s * 0.22, dir * s * 0.22);
-            targetCtx.closePath();
-            targetCtx.fill();
-          } else if (presetId === 'yield_triangle') {
-            targetCtx.lineWidth = Math.max(2.5, s * 0.13);
-            targetCtx.beginPath();
-            targetCtx.moveTo(s * 0.48, 0);
-            targetCtx.lineTo(-s * 0.42, -s * 0.36);
-            targetCtx.lineTo(-s * 0.42, s * 0.36);
-            targetCtx.closePath();
-            targetCtx.stroke();
-          } else if (presetId === 'bike_symbol') {
-            const lw = Math.max(2, s * 0.075);
-            targetCtx.lineWidth = lw;
-            const r = s * 0.17;
-            targetCtx.beginPath();
-            targetCtx.arc(-s * 0.28, s * 0.14, r, 0, Math.PI * 2);
-            targetCtx.stroke();
-            targetCtx.beginPath();
-            targetCtx.arc(s * 0.28, s * 0.14, r, 0, Math.PI * 2);
-            targetCtx.stroke();
-            targetCtx.beginPath();
-            targetCtx.moveTo(-s * 0.28, s * 0.14);
-            targetCtx.lineTo(-s * 0.05, -s * 0.14);
-            targetCtx.lineTo(s * 0.18, -s * 0.14);
-            targetCtx.lineTo(s * 0.28, s * 0.14);
-            targetCtx.moveTo(-s * 0.05, -s * 0.14);
-            targetCtx.lineTo(s * 0.02, s * 0.14);
-            targetCtx.lineTo(s * 0.22, -s * 0.06);
-            targetCtx.moveTo(s * 0.14, -s * 0.24);
-            targetCtx.lineTo(s * 0.22, -s * 0.14);
-            targetCtx.stroke();
-          } else if (presetId === 'parking_bay') {
-            targetCtx.lineWidth = Math.max(2, s * 0.06);
-            targetCtx.strokeRect(-s * 0.5, -s * 0.24, s, s * 0.48);
-          }
-        }
-
-        targetCtx.restore();
-      }
-
-      /* ============================================================================
-         5. KOORDINATENSYSTEM & RECHTWINKLIGES MESSVERFAHREN (GERADE & KURVE)
-         ============================================================================ */
-      function rebuildBaselineCurve() {
-        const m = state.measure;
-        if (!m.isCurved || !m.curvePoints || m.curvePoints.length < 2) {
-          m.curveSamples = [];
-          return;
-        }
-        const pts = m.curvePoints;
-        const samples = [];
-        let accS = 0;
-        samples.push({ x: pts[0].x, y: pts[0].y, s: 0 });
-
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p0 = pts[Math.max(0, i - 1)];
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const p3 = pts[Math.min(pts.length - 1, i + 2)];
-          const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-          const steps = Math.max(8, Math.min(80, Math.ceil(segLen / 4)));
-
-          for (let st = 1; st <= steps; st++) {
-            const t = st / steps;
-            const t2 = t * t;
-            const t3 = t2 * t;
-            const x = 0.5 * (
-              (2 * p1.x) +
-              (-p0.x + p2.x) * t +
-              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
-            );
-            const y = 0.5 * (
-              (2 * p1.y) +
-              (-p0.y + p2.y) * t +
-              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
-            );
-            const prev = samples[samples.length - 1];
-            accS += Math.hypot(x - prev.x, y - prev.y);
-            samples.push({ x, y, s: accS });
-          }
-        }
-        m.curveSamples = samples;
-        m.originX = pts[0].x;
-        m.originY = pts[0].y;
-        if (samples.length >= 2) {
-          m.angleRad = Math.atan2(samples[1].y - samples[0].y, samples[1].x - samples[0].x);
-        }
-      }
-
-      function worldToMeasure(wx, wy) {
-        const m = state.measure;
-        const ppm = Math.max(0.1, m.pxPerMeter);
-
-        if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
-          const samples = m.curveSamples;
-          let bestDistSq = Infinity;
-          let bestXpx = 0;
-          let bestYpx = 0;
-
-          for (let i = 0; i < samples.length - 1; i++) {
-            const a = samples[i];
-            const b = samples[i + 1];
-            const abx = b.x - a.x;
-            const aby = b.y - a.y;
-            const abLenSq = abx * abx + aby * aby;
-            if (abLenSq < 1e-6) continue;
-            let t = ((wx - a.x) * abx + (wy - a.y) * aby) / abLenSq;
-            if (i > 0 && i < samples.length - 2) {
-              t = Math.max(0, Math.min(1, t));
-            } else if (i === 0) {
-              t = Math.min(1, t);
-            } else {
-              t = Math.max(0, t);
-            }
-            const px = a.x + t * abx;
-            const py = a.y + t * aby;
-            const dx = wx - px;
-            const dy = wy - py;
-            const dSq = dx * dx + dy * dy;
-            if (dSq < bestDistSq) {
-              bestDistSq = dSq;
-              const abLen = Math.sqrt(abLenSq);
-              bestXpx = a.s + t * abLen;
-              const tx = abx / abLen;
-              const ty = aby / abLen;
-              const nx = -ty * m.yDir;
-              const ny = tx * m.yDir;
-              bestYpx = dx * nx + dy * ny;
-            }
-          }
-          return { x: bestXpx / ppm, y: bestYpx / ppm };
-        }
-
-        const dx = wx - m.originX;
-        const dy = wy - m.originY;
-        const cos = Math.cos(m.angleRad);
-        const sin = Math.sin(m.angleRad);
-        const alongPx = dx * cos + dy * sin;
-        const perpPx = (-dx * sin + dy * cos) * m.yDir;
-        return { x: alongPx / ppm, y: perpPx / ppm };
-      }
-
-      function measureToWorld(mx, my) {
-        const m = state.measure;
-        const ppm = Math.max(0.1, m.pxPerMeter);
-        const alongPx = mx * ppm;
-        const perpPx = my * ppm;
-
-        if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
-          const samples = m.curveSamples;
-          const totalS = samples[samples.length - 1].s;
-          let bx = samples[0].x;
-          let by = samples[0].y;
-          let tx = 1;
-          let ty = 0;
-
-          if (alongPx <= 0) {
-            const a = samples[0];
-            const b = samples[1];
-            const len = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
-            tx = (b.x - a.x) / len;
-            ty = (b.y - a.y) / len;
-            bx = a.x + tx * alongPx;
-            by = a.y + ty * alongPx;
-          } else if (alongPx >= totalS) {
-            const a = samples[samples.length - 2];
-            const b = samples[samples.length - 1];
-            const len = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
-            tx = (b.x - a.x) / len;
-            ty = (b.y - a.y) / len;
-            const extra = alongPx - totalS;
-            bx = b.x + tx * extra;
-            by = b.y + ty * extra;
-          } else {
-            for (let i = 0; i < samples.length - 1; i++) {
-              const a = samples[i];
-              const b = samples[i + 1];
-              if (alongPx >= a.s && alongPx <= b.s) {
-                const segS = Math.max(1e-5, b.s - a.s);
-                const t = (alongPx - a.s) / segS;
-                bx = a.x + t * (b.x - a.x);
-                by = a.y + t * (b.y - a.y);
-                const len = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
-                tx = (b.x - a.x) / len;
-                ty = (b.y - a.y) / len;
-                break;
+            for (const vModel of visionModels) {
+              const cfgs = [
+                { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+                { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+                { temperature: 0.1, maxOutputTokens: 4096 }
+              ];
+              for (const genCfg of cfgs) {
+                try {
+                  const vUrl = `https://generativelanguage.googleapis.com/v1beta/models/${vModel}:generateContent?key=${encodeURIComponent(activeKey)}`;
+                  const vRes = await fetch(vUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      contents: [{
+                        parts: [
+                          {
+                            text: [
+                              'Analyze this top-down aerial road photo using normalized coordinates from 0 to 1000 (ymin, xmin, ymax, xmax).',
+                              'Return ONLY a compact valid JSON object with two keys:',
+                              '1. "vehicles": array of tight bounding boxes [ymin, xmin, ymax, xmax] for every vehicle (car, truck, van, bus, motorcycle, bicycle) and dark vehicle shadow on the road.',
+                              '2. "vegetation": array of simplified polygons (max 8 polygons, max 10 [y, x] points each in 0..1000) covering trees, grass, bushes, gardens, and buildings OUTSIDE the road curbs and sidewalks.',
+                              'Keep all road surfaces, curbs, bike lanes, sidewalks, and road markings completely outside the vegetation polygons.'
+                            ].join(' ')
+                          },
+                          { inlineData: { mimeType: sendMime, data: base64Data } }
+                        ]
+                      }],
+                      generationConfig: genCfg
+                    })
+                  });
+                  if (vRes.ok) {
+                    const vData = await vRes.json();
+                    const parts = vData?.candidates?.[0]?.content?.parts || [];
+                    const rawText = parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('\n').trim();
+                    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                      const parsed = JSON.parse(jsonMatch[0]);
+                      return {
+                        mode: 'vision_cleanup',
+                        model: vModel,
+                        detections: {
+                          vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+                          vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+                        }
+                      };
+                    }
+                    break;
+                  } else if (vRes.status !== 400) {
+                    break;
+                  }
+                } catch (_) {
+                  break;
+                }
               }
             }
           }
