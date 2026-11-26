@@ -1771,7 +1771,7 @@
               processBackgroundImage();
               showToast('Scharfer Fahrbahnverlauf erzeugt.', 'success');
               return;
-            } else if (proxyRes && proxyRes.status !== 404) {
+            } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
               const errInfo = await proxyRes.json().catch(() => ({}));
               const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
               const fallbackSrc = state.bgTainted ? await ensureCorsMapTwinCanvas() : state.bgOriginalCanvas;
@@ -1779,7 +1779,9 @@
               state.aiActive = true;
               state.aiBlend = 1.0;
               processBackgroundImage();
-              if (detail === 'MISSING_KEY') {
+              if (proxyRes.status === 404) {
+                showToast('Datei api/gemini.js auf Vercel nicht gefunden (404) – Pfad in GitHub prüfen.', 'warning');
+              } else if (detail === 'MISSING_KEY') {
                 showToast('Vercel-Key noch nicht aktiv – bitte Projekt in Vercel einmal neu deployen.', 'warning');
               } else {
                 showToast(`KI-Server Hinweis (${proxyRes.status}): ${detail}`, 'warning');
