@@ -1940,44 +1940,280 @@
                     if (jsonMatch) {
                       const parsed = JSON.parse(jsonMatch[0]);
                       return {
-                        mode: 'vision_cleanup',
-                        model: vModel,
-                        detections: {
-                          vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
-                          vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
-                        }
-                      };
-                    }
-                    break;
-                  } else if (vRes.status !== 400) {
-                    break;
+                      mode: 'vision_cleanup',
+                      model: vModel,
+                      detections: {
+                        vehicles: Array.isArray(parsed?.vehicles) ? parsed.vehicles : [],
+                        vegetation: Array.isArray(parsed?.vegetation) ? parsed.vegetation : []
+                      }
+                    };
                   }
-                } catch (_) {
+                  break;
+                } else if (vRes.status !== 400) {
                   break;
                 }
+              } catch (_) {
+                break;
               }
             }
           }
-
-          const nx = -ty * m.yDir;
-          const ny = tx * m.yDir;
-          return {
-            x: bx + nx * perpPx,
-            y: by + ny * perpPx
-          };
         }
 
-        const cos = Math.cos(m.angleRad);
-        const sin = Math.sin(m.angleRad);
-        const nx = -sin * m.yDir;
-        const ny = cos * m.yDir;
+        const errMsg = lastErrJson?.error?.message || 'KI-Bereinigung konnte mit diesem Schlüssel nicht ausgeführt werden.';
+        throw new Error(errMsg);
+      }
+
+      throw new Error('Kein API-Schlüssel konfiguriert und Server-Proxy nicht erreichbar.');
+    }
+
+    async function runAiRoadCleanup() {
+      if (!state.hasBackground || state.aiBusy) return;
+
+      state.aiBusy = true;
+      updateAiUI();
+      const overlay = document.getElementById('ai-loading-overlay');
+      if (overlay) overlay.classList.remove('hidden');
+
+      try {
+        const readableSource = state.bgTainted
+          ? await ensureCorsMapTwinCanvas()
+          : state.bgOriginalCanvas;
+
+        if (!readableSource) {
+          throw new Error('Kein lesbares Ausgangsbild vorhanden.');
+        }
+
+        const maxDim = state.aiModelTier === 'free' ? 1024 : 1280;
+        const scale = Math.min(1, maxDim / Math.max(state.bgWidth, state.bgHeight));
+        const sendW = Math.max(64, Math.round(state.bgWidth * scale));
+        const sendH = Math.max(64, Math.round(state.bgHeight * scale));
+
+        const sendCanvas = document.createElement('canvas');
+        sendCanvas.width = sendW;
+        sendCanvas.height = sendH;
+        const sCtx = sendCanvas.getContext('2d');
+        sCtx.imageSmoothingEnabled = true;
+        sCtx.imageSmoothingQuality = 'high';
+        sCtx.drawImage(readableSource, 0, 0, sendW, sendH);
+
+        const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.88);
+        const base64Data = dataUrl.split(',')[1];
+        const targetAspect = getClosestAspectRatio(state.bgWidth, state.bgHeight);
+
+        const result = await renderCleanPhotoFromModel(base64Data, 'image/jpeg', targetAspect);
+
+        if (result.mode === 'vision_cleanup') {
+          state.bgAiCanvas = applyVisionCleanupToCanvas(readableSource, result.detections);
+          state.aiUsedModel = result.model || 'gemini-3.8-flash';
+        } else if (result.mode === 'image' && result.img) {
+          const rawAi = document.createElement('canvas');
+          rawAi.width = state.bgWidth;
+          rawAi.height = state.bgHeight;
+          const rCtx = rawAi.getContext('2d');
+          rCtx.imageSmoothingEnabled = true;
+          rCtx.imageSmoothingQuality = 'high';
+          rCtx.drawImage(result.img, 0, 0, state.bgWidth, state.bgHeight);
+          state.bgAiCanvas = applyCrispUnsharpMask(rawAi, 0.25);
+          state.aiUsedModel = result.model || 'gemini-3-pro-image';
+        } else {
+          throw new Error('Unerwartete Antwort vom KI-Dienst.');
+        }
+
+        state.aiActive = true;
+        state.aiBlend = 1.0;
+        processBackgroundImage();
+        showToast('Fahrbahn erfolgreich bereinigt.', 'success');
+      } catch (err) {
+        showToast(`KI-Hinweis: ${err?.message || 'Bereinigung fehlgeschlagen'} – Original-Luftbild bleibt erhalten.`, 'warning');
+      } finally {
+        state.aiBusy = false;
+        if (overlay) overlay.classList.add('hidden');
+        updateAiUI();
+      }
+    }
+
+    /* ============================================================================
+       5. KOORDINATEN-TRANSFORMATION (RECHTWINKLIGES MESSVERFAHREN & KURVENACHSE)
+       ============================================================================ */
+    function rebuildBaselineCurve() {
+      const m = state.measure;
+      if (!m.isCurved || !Array.isArray(m.curvePoints) || m.curvePoints.length < 2) {
+        m.curveSamples = [];
+        return;
+      }
+
+      const pts = m.curvePoints;
+      m.originX = pts[0].x;
+      m.originY = pts[0].y;
+      m.angleRad = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+
+      const dense = [];
+      if (pts.length === 2) {
+        dense.push({ x: pts[0].x, y: pts[0].y });
+        dense.push({ x: pts[1].x, y: pts[1].y });
+      } else {
+        const stepsPerSeg = 18;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p0 = pts[Math.max(0, i - 1)];
+          const p1 = pts[i];
+          const p2 = pts[i + 1];
+          const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+          for (let step = 0; step < stepsPerSeg; step++) {
+            const t = step / stepsPerSeg;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            const x = 0.5 * (
+              (2 * p1.x) +
+              (-p0.x + p2.x) * t +
+              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+            );
+            const y = 0.5 * (
+              (2 * p1.y) +
+              (-p0.y + p2.y) * t +
+              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+            );
+            dense.push({ x, y });
+          }
+        }
+        dense.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
+      }
+
+      let acc = 0;
+      m.curveSamples = dense.map((p, idx) => {
+        if (idx > 0) {
+          acc += Math.hypot(p.x - dense[idx - 1].x, p.y - dense[idx - 1].y);
+        }
+        return { x: p.x, y: p.y, s: acc };
+      });
+    }
+
+    function worldToMeasure(wx, wy) {
+      const m = state.measure;
+      const ppm = Math.max(1, m.pxPerMeter);
+
+      if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
+        const samples = m.curveSamples;
+        let bestDistSq = Infinity;
+        let bestAlongPx = 0;
+        let bestPerpPx = 0;
+
+        for (let i = 0; i < samples.length - 1; i++) {
+          const a = samples[i];
+          const b = samples[i + 1];
+          const segDx = b.x - a.x;
+          const segDy = b.y - a.y;
+          const segLen = Math.hypot(segDx, segDy);
+          if (segLen < 1e-6) continue;
+
+          const tx = segDx / segLen;
+          const ty = segDy / segLen;
+          const nx = -ty * m.yDir;
+          const ny = tx * m.yDir;
+
+          const vx = wx - a.x;
+          const vy = wy - a.y;
+          let proj = vx * tx + vy * ty;
+          if (i > 0) proj = Math.max(0, proj);
+          if (i < samples.length - 2) proj = Math.min(segLen, proj);
+
+          const cx = a.x + tx * proj;
+          const cy = a.y + ty * proj;
+          const distSq = (wx - cx) * (wx - cx) + (wy - cy) * (wy - cy);
+
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestAlongPx = a.s + proj;
+            bestPerpPx = (wx - cx) * nx + (wy - cy) * ny;
+          }
+        }
+
         return {
-          x: m.originX + cos * alongPx + nx * perpPx,
-          y: m.originY + sin * alongPx + ny * perpPx
+          x: bestAlongPx / ppm,
+          y: bestPerpPx / ppm
         };
       }
 
-      function measureAngleToWorldRad(angleDeg) {
+      const dx = wx - m.originX;
+      const dy = wy - m.originY;
+      const cos = Math.cos(m.angleRad);
+      const sin = Math.sin(m.angleRad);
+      const nx = -sin * m.yDir;
+      const ny = cos * m.yDir;
+      const alongPx = dx * cos + dy * sin;
+      const perpPx = dx * nx + dy * ny;
+
+      return {
+        x: alongPx / ppm,
+        y: perpPx / ppm
+      };
+    }
+
+    function measureToWorld(mx, my) {
+      const m = state.measure;
+      const ppm = Math.max(1, m.pxPerMeter);
+      const alongPx = mx * ppm;
+      const perpPx = my * ppm;
+
+      if (m.isCurved && m.curveSamples && m.curveSamples.length >= 2) {
+        const samples = m.curveSamples;
+        const totalS = samples[samples.length - 1].s;
+        let bx, by, tx, ty;
+
+        if (alongPx <= 0) {
+          const p0 = samples[0];
+          const p1 = samples[1];
+          const segLen = Math.max(1e-5, Math.hypot(p1.x - p0.x, p1.y - p0.y));
+          tx = (p1.x - p0.x) / segLen;
+          ty = (p1.y - p0.y) / segLen;
+          bx = p0.x + tx * alongPx;
+          by = p0.y + ty * alongPx;
+        } else if (alongPx >= totalS) {
+          const pPrev = samples[samples.length - 2];
+          const pLast = samples[samples.length - 1];
+          const segLen = Math.max(1e-5, Math.hypot(pLast.x - pPrev.x, pLast.y - pPrev.y));
+          tx = (pLast.x - pPrev.x) / segLen;
+          ty = (pLast.y - pPrev.y) / segLen;
+          const extra = alongPx - totalS;
+          bx = pLast.x + tx * extra;
+          by = pLast.y + ty * extra;
+        } else {
+          let idx = 0;
+          while (idx < samples.length - 2 && samples[idx + 1].s < alongPx) {
+            idx++;
+          }
+          const a = samples[idx];
+          const b = samples[idx + 1];
+          const segS = Math.max(1e-5, b.s - a.s);
+          const t = (alongPx - a.s) / segS;
+          bx = a.x + (b.x - a.x) * t;
+          by = a.y + (b.y - a.y) * t;
+          const segLen = Math.max(1e-5, Math.hypot(b.x - a.x, b.y - a.y));
+          tx = (b.x - a.x) / segLen;
+          ty = (b.y - a.y) / segLen;
+        }
+
+        const nx = -ty * m.yDir;
+        const ny = tx * m.yDir;
+        return {
+          x: bx + nx * perpPx,
+          y: by + ny * perpPx
+        };
+      }
+
+      const cos = Math.cos(m.angleRad);
+      const sin = Math.sin(m.angleRad);
+      const nx = -sin * m.yDir;
+      const ny = cos * m.yDir;
+      return {
+        x: m.originX + cos * alongPx + nx * perpPx,
+        y: m.originY + sin * alongPx + ny * perpPx
+      };
+    }
+
+    function measureAngleToWorldRad(angleDeg) {
         const relRad = (angleDeg * Math.PI) / 180;
         return state.measure.angleRad + relRad * state.measure.yDir;
       }
@@ -1989,15 +2225,505 @@
       }
 
       function screenToImage(sx, sy) {
-        return {
-          x: (sx - state.view.panX) / state.view.zoom,
-          y: (sy - state.view.panY) / state.view.zoom
-        };
+      return {
+        x: (sx - state.view.panX) / state.view.zoom,
+        y: (sy - state.view.panY) / state.view.zoom
+      };
+    }
+
+    /* ============================================================================
+       5B. VORDEFINIERTE MARKIERUNGEN & HÄNDISCHE RETUSCHE-WERKZEUGE
+       ============================================================================ */
+    function getSelectedPresetMarking() {
+      return PREDEFINED_MARKINGS.find(p => p.id === state.presetMarkingId) || PREDEFINED_MARKINGS[0];
+    }
+
+    function syncPresetMarkingUI() {
+      const p = getSelectedPresetMarking();
+      const sizeLbl = document.getElementById('preset-size-label');
+      const sizeRng = document.getElementById('rng-preset-size');
+      const sizeVal = document.getElementById('val-preset-size');
+      const angleRow = document.getElementById('preset-angle-row');
+      const hintEl = document.getElementById('preset-usage-hint');
+
+      state.presetSize = p.defaultSize;
+      if (sizeLbl) sizeLbl.textContent = p.sizeLabel || 'Größe';
+      if (sizeRng) sizeRng.value = String(p.defaultSize);
+      if (sizeVal) sizeVal.textContent = `${p.defaultSize} px`;
+      if (angleRow) angleRow.classList.toggle('hidden', p.mode !== 'stamp');
+      if (hintEl) hintEl.textContent = p.hint || '';
+    }
+
+    function renderPresetMarkingGrid() {
+      const grid = document.getElementById('preset-marking-grid');
+      if (!grid) return;
+      grid.innerHTML = PREDEFINED_MARKINGS.map(p => {
+        const active = p.id === state.presetMarkingId;
+        return `
+          <button type="button" data-preset="${p.id}" class="preset-marking-btn px-2 py-1.5 rounded-lg border text-left flex items-center gap-1.5 transition text-[10.5px] ${
+            active
+              ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-2xs'
+              : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+          }">
+            <span class="text-slate-700 shrink-0">${p.svg}</span>
+            <span class="truncate">${p.name}</span>
+          </button>
+        `;
+      }).join('');
+
+      grid.querySelectorAll('.preset-marking-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.presetMarkingId = btn.dataset.preset;
+          syncPresetMarkingUI();
+          renderPresetMarkingGrid();
+          updateToolBanner();
+          renderCanvas();
+        });
+      });
+
+      syncPresetMarkingUI();
+    }
+
+    function setRetouchTool(toolName) {
+      if (!state.hasBackground && toolName) {
+        showToast('Bitte übernehmen Sie zuerst ein Luftbild.', 'warning');
+        return;
       }
 
-      /* ============================================================================
-         6. RADKOORDINATEN-HELFER (4 RÄDER = 8 WERTE & 2 RÄDER = 4 WERTE)
-         ============================================================================ */
+      const nextTool = (toolName && state.retouchTool === toolName) ? null : toolName;
+      state.retouchTool = nextTool;
+      state.cadLineStart = null;
+      state.lassoPoints = [];
+      state.activeTool = nextTool ? 'retouch' : 'select';
+
+      const btnMap = {
+        preset_marking: 'btn-retouch-preset',
+        eraser: 'btn-retouch-eraser',
+        lasso: 'btn-retouch-lasso',
+        marking_draw: 'btn-retouch-marking',
+        cad_line: 'btn-retouch-cad-line'
+      };
+
+      document.querySelectorAll('.retouch-tool-btn').forEach(btn => {
+        btn.className = btn.id === 'btn-retouch-cad-line'
+          ? 'retouch-tool-btn col-span-2 py-2 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-indigo-50 text-slate-800 flex items-center justify-center gap-1.5 transition'
+          : 'retouch-tool-btn py-2 px-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center justify-center gap-1.5 transition';
+      });
+
+      if (nextTool && btnMap[nextTool]) {
+        const activeBtn = document.getElementById(btnMap[nextTool]);
+        if (activeBtn) {
+          activeBtn.className = nextTool === 'cad_line'
+            ? 'retouch-tool-btn col-span-2 py-2 px-2.5 rounded-lg border border-indigo-600 bg-indigo-50 text-indigo-900 font-bold flex items-center justify-center gap-1.5 transition shadow-2xs'
+            : 'retouch-tool-btn py-2 px-2 rounded-lg border border-blue-600 bg-blue-50 text-blue-900 font-bold flex items-center justify-center gap-1.5 transition shadow-2xs';
+        }
+      }
+
+      const badge = document.getElementById('retouch-active-badge');
+      const optBox = document.getElementById('retouch-options-box');
+      const presetOpts = document.getElementById('retouch-preset-opts');
+      const sizeRow = document.getElementById('retouch-size-row');
+      const sizeLbl = document.getElementById('retouch-size-label');
+      const asphaltOpts = document.getElementById('retouch-asphalt-opts');
+      const markingOpts = document.getElementById('retouch-marking-opts');
+
+      if (badge) badge.classList.toggle('hidden', !nextTool);
+      if (optBox) optBox.classList.toggle('hidden', !nextTool);
+
+      if (nextTool) {
+        const isPreset = nextTool === 'preset_marking';
+        const isAsphalt = nextTool === 'eraser' || nextTool === 'lasso' || nextTool === 'pipette';
+        const isMarking = nextTool === 'marking_draw' || nextTool === 'cad_line';
+
+        if (presetOpts) presetOpts.classList.toggle('hidden', !isPreset);
+        if (sizeRow) sizeRow.classList.toggle('hidden', isPreset || nextTool === 'lasso');
+        if (sizeLbl) sizeLbl.textContent = isMarking ? 'Linienbreite' : 'Pinselbreite';
+        if (asphaltOpts) asphaltOpts.classList.toggle('hidden', !isAsphalt);
+        if (markingOpts) markingOpts.classList.toggle('hidden', !isMarking);
+      }
+
+      updateCanvasToolButtons();
+      updateToolBanner();
+      renderCanvas();
+    }
+
+    function pushRetouchHistory() {
+      if (!state.bgRetouchCanvas) return;
+      const snap = document.createElement('canvas');
+      snap.width = state.bgWidth;
+      snap.height = state.bgHeight;
+      snap.getContext('2d').drawImage(state.bgRetouchCanvas, 0, 0);
+      state.retouchHistory.push(snap);
+      if (state.retouchHistory.length > 20) state.retouchHistory.shift();
+    }
+
+    function undoRetouch() {
+      if (!state.bgRetouchCanvas || state.retouchHistory.length === 0) {
+        showToast('Keine Bildkorrektur zum Rückgängigmachen vorhanden.', 'info');
+        return;
+      }
+      const prev = state.retouchHistory.pop();
+      const rCtx = state.bgRetouchCanvas.getContext('2d');
+      rCtx.clearRect(0, 0, state.bgWidth, state.bgHeight);
+      rCtx.drawImage(prev, 0, 0);
+      processBackgroundImage();
+      showToast('Letzte Markierungs-Korrektur rückgängig gemacht.', 'info');
+    }
+
+    function sampleLocalAsphaltColor(ix, iy, radius = 16) {
+      if (!state.retouchAutoAsphalt || !state.bgProcessedCanvas) {
+        return state.retouchColor;
+      }
+      try {
+        const pCtx = state.bgProcessedCanvas.getContext('2d');
+        const r = Math.max(10, Math.round(radius));
+        const x0 = Math.max(0, Math.round(ix - r));
+        const y0 = Math.max(0, Math.round(iy - r));
+        const w = Math.min(state.bgWidth - x0, r * 2);
+        const h = Math.min(state.bgHeight - y0, r * 2);
+        if (w <= 0 || h <= 0) return state.retouchColor;
+
+        const data = pCtx.getImageData(x0, y0, w, h).data;
+        const samples = [];
+        for (let py = 0; py < h; py += 2) {
+          for (let px = 0; px < w; px += 2) {
+            const dx = (x0 + px) - ix;
+            const dy = (y0 + py) - iy;
+            const dist = Math.hypot(dx, dy);
+            if (dist < r * 0.45) continue;
+            const idx = (py * w + px) * 4;
+            const cr = data[idx];
+            const cg = data[idx + 1];
+            const cb = data[idx + 2];
+            const lum = 0.299 * cr + 0.587 * cg + 0.114 * cb;
+            if (lum >= 45 && lum <= 195) {
+              samples.push([cr, cg, cb]);
+            }
+          }
+        }
+        if (samples.length === 0) return state.retouchColor;
+        samples.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2]));
+        const med = samples[Math.floor(samples.length / 2)];
+        return `rgb(${med[0]}, ${med[1]}, ${med[2]})`;
+      } catch (_) {
+        return state.retouchColor;
+      }
+    }
+
+    function pickColorFromCanvasAt(ix, iy) {
+      const src = state.bgProcessedCanvas || state.bgCorsCanvas;
+      if (!src) return;
+      try {
+        const x = Math.max(0, Math.min(state.bgWidth - 1, Math.round(ix)));
+        const y = Math.max(0, Math.min(state.bgHeight - 1, Math.round(iy)));
+        const d = src.getContext('2d').getImageData(x, y, 1, 1).data;
+        const hex = `#${[d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+        state.retouchColor = hex;
+        state.retouchAutoAsphalt = false;
+        const inp = document.getElementById('input-retouch-color');
+        const chk = document.getElementById('chk-retouch-auto-asphalt');
+        if (inp) inp.value = hex;
+        if (chk) chk.checked = false;
+        showToast(`Asphaltfarbe aufgenommen (${hex}).`, 'success');
+      } catch (_) {
+        showToast('Farbe konnte aus externer Kachel nicht ausgelesen werden.', 'warning');
+      }
+    }
+
+    function applyRetouchStrokeSegment(p1, p2) {
+      if (!state.bgRetouchCanvas) return;
+      const rCtx = state.bgRetouchCanvas.getContext('2d');
+      rCtx.save();
+      rCtx.lineCap = 'round';
+      rCtx.lineJoin = 'round';
+
+      if (state.retouchTool === 'eraser') {
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        rCtx.strokeStyle = sampleLocalAsphaltColor(mx, my, state.retouchSize * 1.4);
+        rCtx.lineWidth = state.retouchSize;
+        rCtx.setLineDash([]);
+      } else {
+        const style = state.retouchMarkingStyle;
+        rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
+        rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
+        rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.8, state.retouchSize * 1.5] : []);
+      }
+
+      rCtx.beginPath();
+      rCtx.moveTo(p1.x, p1.y);
+      rCtx.lineTo(p2.x, p2.y);
+      rCtx.stroke();
+      rCtx.restore();
+
+      processBackgroundImage();
+    }
+
+    function applyRetouchLasso(points) {
+      if (!state.bgRetouchCanvas || points.length < 3) return;
+      pushRetouchHistory();
+      let cx = 0;
+      let cy = 0;
+      points.forEach(p => { cx += p.x; cy += p.y; });
+      cx /= points.length;
+      cy /= points.length;
+
+      const fillCol = sampleLocalAsphaltColor(cx, cy, 28);
+      const rCtx = state.bgRetouchCanvas.getContext('2d');
+      rCtx.save();
+      rCtx.fillStyle = fillCol;
+      rCtx.strokeStyle = fillCol;
+      rCtx.lineWidth = 2;
+      rCtx.lineJoin = 'round';
+      rCtx.beginPath();
+      points.forEach((p, i) => (i === 0 ? rCtx.moveTo(p.x, p.y) : rCtx.lineTo(p.x, p.y)));
+      rCtx.closePath();
+      rCtx.fill();
+      rCtx.stroke();
+      rCtx.restore();
+
+      processBackgroundImage();
+      showToast('Ausgewählter Bereich mit Asphaltfarbe bereinigt.', 'success');
+    }
+
+    function drawCadStraightLineToRetouch(p1, p2) {
+      if (!state.bgRetouchCanvas) return;
+      pushRetouchHistory();
+      const rCtx = state.bgRetouchCanvas.getContext('2d');
+      const style = state.retouchMarkingStyle;
+      rCtx.save();
+      rCtx.strokeStyle = style === 'yellow_solid' ? '#facc15' : (style === 'curb_edge' ? '#cbd5e1' : '#ffffff');
+      rCtx.lineWidth = Math.max(2, state.retouchSize * 0.45);
+      rCtx.lineCap = 'butt';
+      rCtx.setLineDash(style === 'white_dashed' ? [state.retouchSize * 1.8, state.retouchSize * 1.5] : []);
+      rCtx.beginPath();
+      rCtx.moveTo(p1.x, p1.y);
+      rCtx.lineTo(p2.x, p2.y);
+      rCtx.stroke();
+      rCtx.restore();
+
+      processBackgroundImage();
+    }
+
+    function drawPredefinedMarking(c, presetId, color, size, pStart, pEnd, angleDeg = 0) {
+      if (!pStart) return;
+      const col = color || '#ffffff';
+      const sz = Math.max(2, Number(size) || 5);
+
+      c.save();
+      c.strokeStyle = col;
+      c.fillStyle = col;
+      c.lineCap = 'butt';
+      c.lineJoin = 'miter';
+
+      if (pEnd && ['dashed_line', 'solid_line', 'double_line', 'stop_line', 'crosswalk', 'hatched_area'].includes(presetId)) {
+        const dx = pEnd.x - pStart.x;
+        const dy = pEnd.y - pStart.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) {
+          c.restore();
+          return;
+        }
+        const ux = dx / len;
+        const uy = dy / len;
+        const nx = -uy;
+        const ny = ux;
+
+        if (presetId === 'dashed_line') {
+          c.lineWidth = sz;
+          c.setLineDash([sz * 3.2, sz * 2.8]);
+          c.beginPath();
+          c.moveTo(pStart.x, pStart.y);
+          c.lineTo(pEnd.x, pEnd.y);
+          c.stroke();
+        } else if (presetId === 'solid_line') {
+          c.lineWidth = sz;
+          c.setLineDash([]);
+          c.beginPath();
+          c.moveTo(pStart.x, pStart.y);
+          c.lineTo(pEnd.x, pEnd.y);
+          c.stroke();
+        } else if (presetId === 'double_line') {
+          const offset = sz * 1.15;
+          c.lineWidth = Math.max(1.5, sz * 0.8);
+          c.setLineDash([]);
+          for (const side of [-1, 1]) {
+            c.beginPath();
+            c.moveTo(pStart.x + nx * offset * side, pStart.y + ny * offset * side);
+            c.lineTo(pEnd.x + nx * offset * side, pEnd.y + ny * offset * side);
+            c.stroke();
+          }
+        } else if (presetId === 'stop_line') {
+          c.lineWidth = sz;
+          c.setLineDash([]);
+          c.beginPath();
+          c.moveTo(pStart.x, pStart.y);
+          c.lineTo(pEnd.x, pEnd.y);
+          c.stroke();
+        } else if (presetId === 'crosswalk') {
+          const stripeW = Math.max(4, sz * 0.16);
+          const pitch = stripeW * 2;
+          const count = Math.max(2, Math.floor(len / pitch));
+          c.lineWidth = sz;
+          c.setLineDash([]);
+          for (let i = 0; i <= count; i++) {
+            const dist = i * pitch + stripeW * 0.5;
+            if (dist > len) break;
+            const cx = pStart.x + ux * dist;
+            const cy = pStart.y + uy * dist;
+            c.beginPath();
+            c.moveTo(cx - nx * (sz / 2), cy - ny * (sz / 2));
+            c.lineTo(cx + nx * (sz / 2), cy + ny * (sz / 2));
+            c.stroke();
+          }
+        } else if (presetId === 'hatched_area') {
+          const halfW = sz / 2;
+          c.lineWidth = 2;
+          c.setLineDash([]);
+          c.beginPath();
+          c.moveTo(pStart.x - nx * halfW, pStart.y - ny * halfW);
+          c.lineTo(pEnd.x - nx * halfW, pEnd.y - ny * halfW);
+          c.moveTo(pStart.x + nx * halfW, pStart.y + ny * halfW);
+          c.lineTo(pEnd.x + nx * halfW, pEnd.y + ny * halfW);
+          c.stroke();
+
+          const step = Math.max(8, halfW * 0.55);
+          for (let d = step * 0.5; d < len - step * 0.3; d += step) {
+            const cx = pStart.x + ux * d;
+            const cy = pStart.y + uy * d;
+            c.beginPath();
+            c.moveTo(cx - nx * halfW - ux * (step * 0.35), cy - ny * halfW - uy * (step * 0.35));
+            c.lineTo(cx + nx * halfW + ux * (step * 0.35), cy + ny * halfW + uy * (step * 0.35));
+            c.stroke();
+          }
+        }
+
+        c.restore();
+        return;
+      }
+
+      // Stempel-Markierungen am Punkt pStart mit Drehwinkel angleDeg
+      c.translate(pStart.x, pStart.y);
+      c.rotate((angleDeg * Math.PI) / 180);
+      const s = sz / 40;
+      c.scale(s, s);
+      c.lineWidth = 4;
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+
+      if (presetId === 'arrow_straight') {
+        c.beginPath();
+        c.moveTo(-20, 0);
+        c.lineTo(14, 0);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(22, 0);
+        c.lineTo(8, -9);
+        c.lineTo(8, 9);
+        c.closePath();
+        c.fill();
+      } else if (presetId === 'arrow_left') {
+        c.beginPath();
+        c.moveTo(-18, 8);
+        c.lineTo(-2, 8);
+        c.quadraticCurveTo(4, 8, 4, 2);
+        c.lineTo(4, -10);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(4, -18);
+        c.lineTo(-4, -6);
+        c.lineTo(12, -6);
+        c.closePath();
+        c.fill();
+      } else if (presetId === 'arrow_right') {
+        c.beginPath();
+        c.moveTo(-18, -8);
+        c.lineTo(-2, -8);
+        c.quadraticCurveTo(4, -8, 4, -2);
+        c.lineTo(4, 10);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(4, 18);
+        c.lineTo(-4, 6);
+        c.lineTo(12, 6);
+        c.closePath();
+        c.fill();
+      } else if (presetId === 'arrow_straight_left') {
+        c.beginPath();
+        c.moveTo(-20, 4);
+        c.lineTo(14, 4);
+        c.moveTo(-4, 4);
+        c.lineTo(4, -10);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(22, 4);
+        c.lineTo(10, -3);
+        c.lineTo(10, 11);
+        c.closePath();
+        c.fill();
+        c.beginPath();
+        c.moveTo(8, -17);
+        c.lineTo(-2, -10);
+        c.lineTo(9, -5);
+        c.closePath();
+        c.fill();
+      } else if (presetId === 'arrow_straight_right') {
+        c.beginPath();
+        c.moveTo(-20, -4);
+        c.lineTo(14, -4);
+        c.moveTo(-4, -4);
+        c.lineTo(4, 10);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(22, -4);
+        c.lineTo(10, -11);
+        c.lineTo(10, 3);
+        c.closePath();
+        c.fill();
+        c.beginPath();
+        c.moveTo(8, 17);
+        c.lineTo(-2, 10);
+        c.lineTo(9, 5);
+        c.closePath();
+        c.fill();
+      } else if (presetId === 'yield_triangle') {
+        c.lineWidth = 3.5;
+        c.beginPath();
+        c.moveTo(18, 0);
+        c.lineTo(-14, -14);
+        c.lineTo(-14, 14);
+        c.closePath();
+        c.stroke();
+      } else if (presetId === 'bike_symbol') {
+        c.lineWidth = 2.6;
+        c.beginPath();
+        c.arc(-11, 6, 6.5, 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        c.arc(11, 6, 6.5, 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(-11, 6);
+        c.lineTo(-2, -5);
+        c.lineTo(7, -5);
+        c.lineTo(11, 6);
+        c.moveTo(-2, -5);
+        c.lineTo(1, 6);
+        c.lineTo(11, 6);
+        c.moveTo(7, -5);
+        c.lineTo(9, -10);
+        c.stroke();
+      } else if (presetId === 'parking_bay') {
+        c.lineWidth = 3;
+        c.strokeRect(-22, -11, 44, 22);
+      }
+
+      c.restore();
+    }
+
+    /* ============================================================================
+       6. RADKOORDINATEN-HELFER (4 RÄDER = 8 WERTE & 2 RÄDER = 4 WERTE)
+       ============================================================================ */
       function read4WheelsFromInputs() {
         return {
           vl: { x: parseFloat(document.getElementById('w-vl-x').value) || 0, y: parseFloat(document.getElementById('w-vl-y').value) || 0 },
