@@ -1658,6 +1658,34 @@
               return outImg;
             }
           } else if (proxyRes && (proxyRes.status !== 404 || window.location.hostname.endsWith('.vercel.app'))) {
+            if (proxyRes.status === 429 || proxyRes.status === 503) {
+              await new Promise(r => setTimeout(r, 1200));
+              const retryRes = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  prompt: strictPrompt,
+                  imageBase64: base64Data,
+                  mimeType: sendMime,
+                  aspectRatio: targetAspect
+                })
+              }).catch(() => null);
+              if (retryRes && retryRes.ok) {
+                const retryData = await retryRes.json();
+                const rParts = retryData?.candidates?.[0]?.content?.parts || [];
+                const rImgPart = rParts.find(p => p.inlineData && p.inlineData.data);
+                if (rImgPart) {
+                  const mime = rImgPart.inlineData.mimeType || 'image/png';
+                  const outImg = new Image();
+                  await new Promise((resolve, reject) => {
+                    outImg.onload = resolve;
+                    outImg.onerror = reject;
+                    outImg.src = `data:${mime};base64,${rImgPart.inlineData.data}`;
+                  });
+                  return outImg;
+                }
+              }
+            }
             const errInfo = await proxyRes.json().catch(() => ({}));
             const detail = errInfo?.error?.message || errInfo?.error || `HTTP ${proxyRes.status}`;
             const err = new Error(detail);
